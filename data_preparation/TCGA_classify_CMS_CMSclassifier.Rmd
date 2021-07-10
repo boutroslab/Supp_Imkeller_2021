@@ -1,0 +1,109 @@
+---
+title: "Classification of TCGA samples into CMS using CMSclassifier"
+author: Katharina Imkeller
+date: 01. June 2021
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Aim 
+
+Classify the CMS samples into consensus molecular subtypes (CMS) using the original algorithm CMSclassifier.
+
+```{r, message=FALSE}
+# https://github.com/Sage-Bionetworks/CMSclassifier
+library(CMSclassifier)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(DESeq2)
+library(tidyverse)
+```
+
+## Prepare gene expression data
+
+Import RNAseq data and metadata
+
+```{r}
+counts <- readRDS("../r_data/TCGA_allcounts_normalized.RData")
+sampleTable <- readRDS("../r_data/TCGA_COAD_READ_rnaseq_annotation.RData")
+```
+
+For reasons of not messing up the classification, we only classify tumor samples sequenced with a readlength of 48 bp (closest to the data the algorithm was trained on).
+
+```{r}
+classifyTable <- sampleTable %>%
+    dplyr::filter(read_length == 48 & sample_type == "Primary Tumor")
+```
+
+Subset the counts table on selected samples 
+```{r}
+counts_sel <- counts[,colnames(counts) %in% classifyTable$id]
+```
+
+The subsetting selects the right columns.
+```{r}
+all(colnames(counts_sel) == classifyTable$id)
+```
+```{r}
+ncol(counts_sel) == length(classifyTable$id)
+```
+
+
+Convert gene identifiers to Entrez ids
+
+```{r}
+entrez_convert <- clusterProfiler::bitr(rownames(counts_sel), 
+                                 fromType = "ENSEMBL",
+                                 toType= "ENTREZID", 
+                                 OrgDb =org.Hs.eg.db) 
+
+entrez_convert <- entrez_convert %>%
+    dplyr::filter(!is.na(ENTREZID)) %>%
+    dplyr::filter(!duplicated(ENSEMBL) & !duplicated(ENTREZID))
+
+
+counts_sel <- counts_sel[rownames(counts_sel) %in% entrez_convert$ENSEMBL,]
+rownames(counts_sel) <- entrez_convert$ENTREZID
+```
+
+## Classify samples
+
+```{r}
+set.seed(42)
+# pseudocount needs to be added, because CMSclassifier is not able to handle missing values
+Rfcms <- CMSclassifier::classifyCMS(log2(counts_sel+0.1),method="RF")
+```
+
+```{r}
+pred_table <- Rfcms[[1]] %>% rownames_to_column("id") %>%
+    dplyr::rename(prediction = RF)
+```
+
+
+## Quality control
+
+```{r}
+table(pred_table$prediction)
+```
+How many of the non-tumor samples get classified?
+```{r}
+left_join(pred_table,
+    sampleTable, by = "id") %>%
+    group_by(sample_type, prediction, read_length) %>%
+    summarize(n = n())
+```
+This looks ok and corresponds more or less to what was found before.
+
+## Save classification
+
+```{r}
+saveRDS(pred_table, "../r_data/TCGA_CMS_classification_CMSclassifier.RData")
+```
+
+# Session info + package versions
+```{r}
+sessionInfo()
+```

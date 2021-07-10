@@ -1,0 +1,373 @@
+---
+title: "Wnt_low_Wnt_high_differential model"
+author: Katharina Imkeller
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# read in file with thresholds for wnt low/ wnt high
+source('definitions_analysis_visualization.R')
+```
+
+# TCGA transcriptomics
+
+## Data input
+
+Read in counts data
+```{r}
+# RNAseq count data
+all_counts <- readRDS("../r_data/TCGA_allcounts_raw.RData")
+sampleTable <- readRDS("../r_data/TCGA_COAD_READ_rnaseq_annotation.RData")
+```
+
+```{r}
+counts_table <- all_counts %>% t() %>% as.data.frame() %>%
+    rownames_to_column("id")
+```
+
+Read information ofn Wnt-high and Wnt-low tumors derived from Figure1.Rmd
+
+```{r}
+wnt_high_tcga <- readRDS("../r_data/wnt_high_list_tcga.RData")
+wnt_low_tcga <- readRDS("../r_data/wnt_low_list_tcga.RData")
+```
+
+## Define groups
+
+Test groups: tumor wnt low, tumor wnt high, normal tissue
+
+```{r}
+sampleTable <- sampleTable %>%
+  dplyr::mutate(wnt_group = ifelse(sample_type == "Solid Tissue Normal", "normal", 
+    ifelse(sample_type != "Solid Tissue Normal" & id %in% wnt_high_tcga, "high",
+      ifelse(sample_type != "Solid Tissue Normal" & id %in% wnt_low_tcga, "low", NA))))
+
+sampleTable$wnt_group <- factor(sampleTable$wnt_group , levels = c("normal", "low", "high"))
+```
+
+Determine nb of samples in each group
+```{r}
+sampleTable %>%
+  group_by(wnt_group) %>%
+  summarize(n())
+```
+
+```{r}
+dim(all_counts)
+dim(all_counts_n)
+```
+
+## Use DESeq2 for differential expression analysis
+
+```{r}
+# this does not work, because apparently some of the counts returned by deseq2 are not integers
+dds <- DESeqDataSetFromMatrix(countData = all_counts,
+                              colData = sampleTable,
+                              design= ~ wnt_group)
+
+ncol(all_counts)
+nrow(sampleTable)
+```
+
+```{r}
+
+dds <- DESeqDataSetFromHTSeqCount(sampleTable = sampleTable,
+                                       directory = "../data_preparation/GDCdata/quant_files",
+                                       design= ~ wnt_group)
+
+rownames(dds) <- substr(rownames(dds), 1, 15)
+
+# only keep genes with reasonable expression
+keep <- rowSums(counts(dds)) >= 10
+dds<- dds[keep,]
+
+dds <- DESeq(dds)
+
+```
+```{r}
+saveRDS(dds, "../r_data/DESeq2_dds_wnthigh_wntlow_normal.RData")
+```
+
+## Extract the results for different contrasts
+
+Difference between normal and Wnt low
+
+```{r}
+low_norm <- results(dds, contrast = c("wnt_group", "low", "normal"))
+
+low_norm <- as.data.frame(low_norm) %>%
+  rownames_to_column("ENSEMBL")
+
+symbols_tcga <- clusterProfiler::bitr(low_norm$ENSEMBL, fromType = "ENSEMBL", toType= c("ENTREZID", "SYMBOL"), OrgDb =org.Hs.eg.db) 
+symbols_tcga_filtered <- symbols_tcga %>% 
+  # remove empty and ambiguous annotations
+  drop_na() %>%
+  dplyr::filter(!duplicated(ENTREZID) & !duplicated(SYMBOL) & !duplicated(ENSEMBL))
+
+low_norm_ann <- left_join(low_norm, symbols_tcga_filtered, by = "ENSEMBL") %>%
+  drop_na()
+```
+
+Difference between normal and Wnt high
+
+```{r}
+high_norm <- results(dds, contrast = c("wnt_group", "high", "normal"))
+
+high_norm <- as.data.frame(high_norm) %>%
+  rownames_to_column("ENSEMBL")
+
+high_norm_ann <- left_join(high_norm, symbols_tcga_filtered, by = "ENSEMBL") %>%
+  drop_na()
+```
+
+Difference between wnt high and wnt low
+
+```{r}
+high_low <- results(dds, contrast = c("wnt_group", "high", "low"))
+
+high_low  <- as.data.frame(high_low ) %>%
+  rownames_to_column("ENSEMBL")
+
+high_low_ann <- left_join(high_low , symbols_tcga_filtered, by = "ENSEMBL") %>%
+  drop_na()
+```
+```{r}
+saveRDS(high_low_ann, "../r_data/DESeq2_res_high_low.RData")
+saveRDS(high_norm_ann, "../r_data/DESeq2_res_high_norm.RData")
+saveRDS(low_norm_ann, "../r_data/DESeq2_res_low_norm.RData")
+```
+
+
+# TCGA proteomics
+
+## Data input
+Read in RNAseq and proteomics data. Sample classification into CMS
+```{r}
+rnaseq <- read_delim("../external_data/Human__CPTAC_COAD__UNC__RNAseq__HiSeq_RNA__03_01_2017__BCM__Gene__BCM_RSEM_UpperQuartile_log2.cct", delim = "\t")
+
+# this proteomics data is tumor vs. normal normalized
+proteomics <- read_delim("../external_data/Human__CPTAC_COAD__PNNL__Proteome__TMT__03_01_2017__BCM__Gene__Tumor_Normal_log2FC.cct", delim = "\t")
+
+# this annotation includes CMS calling which was performed using CMSclassifier
+annotation <- read_delim("../external_data/NIHMS1524432-supplement-8.csv", delim = "\t") %>%
+    dplyr::filter(SampleID != "Type") %>%
+    dplyr::rename(participant = SampleID)
+```
+## Define groups
+
+Separate into wnt high and wnt low
+Judging from fig 1 , axin2 expression of 10.5 seems to be a good threshold
+
+```{r}
+axin2 <- rnaseq %>%
+  dplyr::filter(attrib_name == "AXIN2")
+wnt_group <- ifelse(axin2 > 10.5, "high", "low")[-1]
+names(wnt_group) <- colnames(axin2)[-1]
+length(wnt_group)
+
+```
+```{r}
+wnt_group %>% table()
+```
+## Use limma for differential protein expression analysis
+
+```{r}
+valid_patients <- intersect(colnames(proteomics)[-1], names(wnt_group))
+
+prot_matrix <- proteomics %>%
+  dplyr::select(all_of(valid_patients)) %>%
+  as.matrix()
+
+rownames(prot_matrix) <- proteomics$attrib_name
+
+wnt_design <- wnt_group[colnames(prot_matrix)]
+```
+
+Run DGEA 
+DGEA function using limma
+
+```{r}
+run_DGEA <- function(matrix, group_list) {
+  design<-model.matrix(~group_list)
+  fit<-lmFit(matrix, design)
+  fit<-eBayes(fit)
+  topTable(fit,coef=2, number=Inf)
+}
+```
+
+```{r}
+wnt_design <- factor(wnt_design, levels = c("low", "high")) 
+tcga_prot_res <- run_DGEA(prot_matrix, wnt_design)
+```
+```{r}
+tcga_prot_res <- as.data.frame(tcga_prot_res) %>%
+  rownames_to_column("SYMBOL")
+
+symbols_tcga_prot <- clusterProfiler::bitr(tcga_prot_res$SYMBOL, fromType = "SYMBOL", toType= c("ENTREZID", "ENSEMBL"), OrgDb =org.Hs.eg.db) 
+symbols_tcga_prot_filtered <- symbols_tcga_prot %>% 
+  # remove empty and ambiguous annotations
+  drop_na() %>%
+  dplyr::filter(!duplicated(ENTREZID) & !duplicated(SYMBOL) & !duplicated(ENSEMBL))
+
+tcga_prot_res <- left_join(tcga_prot_res, symbols_tcga_prot_filtered, by = "SYMBOL") %>%
+  drop_na()
+```
+```{r}
+saveRDS(tcga_prot_res, "../r_data/tcga_prot_res_high_low.RData")
+```
+
+
+
+# DepMap transcriptomics data
+
+## Data input
+
+```{r}
+depmap_df <- readRDS("../r_data/depmap_rna_prot_crispr.RData")
+```
+```{r}
+axin2 <- depmap_df %>% dplyr::filter(gene_name == "AXIN2")
+```
+
+## Define groups
+
+Separate into Wnt high and Wnt low
+
+```{r}
+wnt_groups <- axin2 %>%
+  dplyr::mutate(wnt_group = ifelse(rna_expression < depmap_axin2_threshold, "low", "high"))
+```
+
+## Use limma for differential transcript expression analysis
+
+We use limma here, since the data is available as TPM and DESeq2 is implemented for use with raw count data.
+
+```{r}
+df <- depmap_df %>%
+  dplyr::select(depmap_id, gene_name, rna_expression) %>%
+  unique() %>%
+  pivot_wider(names_from = depmap_id, values_from = rna_expression)
+
+count_matrix <- as.matrix(df[,-1])
+rownames(count_matrix) <- df$gene_name
+```
+
+```{r}
+wnt_list <- wnt_groups$wnt_group
+names(wnt_list) <- wnt_groups$depmap_id
+wnt_list <- factor(wnt_list, levels = c("low", "high"))
+depmap_res <- run_DGEA(count_matrix, wnt_list)
+```
+
+```{r}
+depmap_res <- depmap_res %>%
+  rownames_to_column("SYMBOL")
+
+symbols_depmap <- clusterProfiler::bitr(depmap_res$SYMBOL, fromType = "SYMBOL", toType= c("ENTREZID", "ENSEMBL"), OrgDb =org.Hs.eg.db) 
+symbols_depmap_filtered <- symbols_depmap %>% 
+  # remove empty and ambiguous annotations
+  drop_na() %>%
+  dplyr::filter(!duplicated(ENTREZID) & !duplicated(SYMBOL) & !duplicated(ENSEMBL))
+
+# only keep results with correct annotation
+depmap_res_filtered <- left_join(depmap_res, symbols_depmap_filtered, by = "SYMBOL") %>%
+  drop_na()
+```
+
+```{r}
+saveRDS(depmap_res_filtered, "../r_data/depmap_transcriptomics_limma_wntgroup.RData")
+```
+
+# Depmap protein data
+
+Set up matrix
+ 
+```{r}
+df_prot <- depmap_df %>%
+  dplyr::select(depmap_id, gene_name, protein_expression) %>%
+  drop_na() %>%
+  unique() %>%
+  pivot_wider(names_from = depmap_id, values_from = protein_expression)
+
+count_matrix_prot <- as.matrix(df_prot[,-1])
+rownames(count_matrix_prot) <- df_prot$gene_name
+```
+
+```{r}
+valid_cl <- colnames(count_matrix_prot)
+wnt_list_prot <- wnt_groups$wnt_group[wnt_groups$depmap_id %in% valid_cl]
+names(wnt_list_prot) <- valid_cl
+wnt_list_prot <- factor(wnt_list_prot, levels = c("low", "high"))
+depmap_res_prot <- run_DGEA(count_matrix_prot, wnt_list_prot)
+```
+
+```{r}
+wnt_list_prot %>% table()
+```
+
+```{r}
+depmap_res_prot <- depmap_res_prot %>%
+  rownames_to_column("SYMBOL")
+
+symbols_depmap_prot <- clusterProfiler::bitr(depmap_res_prot$SYMBOL, fromType = "SYMBOL", toType= c("ENTREZID", "ENSEMBL"), OrgDb =org.Hs.eg.db) 
+symbols_depmap_prot_filtered <- symbols_depmap_prot %>% 
+  # remove empty and ambiguous annotations
+  drop_na() %>%
+  dplyr::filter(!duplicated(ENTREZID) & !duplicated(SYMBOL) & !duplicated(ENSEMBL))
+
+# only keep results with correct annotation
+depmap_res_prot_filtered <- left_join(depmap_res_prot, symbols_depmap_prot_filtered, by = "SYMBOL") %>%
+  drop_na()
+```
+```{r}
+saveRDS(depmap_res_prot_filtered, "../r_data/depmap_proteomics_limma_wntgroup.RData")
+```
+
+# Depmap dependency data
+
+Set up matrix
+ 
+```{r}
+df_dep <- depmap_df %>%
+  dplyr::select(depmap_id, gene_name, dependency) %>%
+  drop_na() %>%
+  unique() %>%
+  pivot_wider(names_from = depmap_id, values_from = dependency)
+
+count_matrix_dep <- as.matrix(df_dep[,-1])
+rownames(count_matrix_dep) <- df_dep$gene_name
+```
+
+```{r}
+valid_cl <- colnames(count_matrix_dep)
+wnt_list_dep <- wnt_groups$wnt_group[wnt_groups$depmap_id %in% valid_cl]
+names(wnt_list_dep) <- valid_cl
+wnt_list_dep <- factor(wnt_list_dep, levels = c("low", "high"))
+depmap_res_dep <- run_DGEA(count_matrix_dep, wnt_list_dep)
+```
+Number of cell lines for each group
+```{r}
+wnt_list_dep %>% table()
+```
+
+
+```{r}
+depmap_res_dep <- depmap_res_dep %>%
+  rownames_to_column("SYMBOL")
+
+symbols_depmap_dep <- clusterProfiler::bitr(depmap_res_dep$SYMBOL, fromType = "SYMBOL", toType= c("ENTREZID", "ENSEMBL"), OrgDb =org.Hs.eg.db) 
+symbols_depmap_dep_filtered <- symbols_depmap_dep %>% 
+  # remove empty and ambiguous annotations
+  drop_na() %>%
+  dplyr::filter(!duplicated(ENTREZID) & !duplicated(SYMBOL) & !duplicated(ENSEMBL))
+
+# only keep results with correct annotation
+depmap_res_dep_filtered <- left_join(depmap_res_dep, symbols_depmap_dep_filtered, by = "SYMBOL") %>%
+  drop_na()
+```
+
+```{r}
+saveRDS(depmap_res_dep_filtered, "../r_data/depmap_dependency_limma_wntgroup.RData")
+```
+

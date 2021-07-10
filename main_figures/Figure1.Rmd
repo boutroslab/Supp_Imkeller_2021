@@ -1,0 +1,585 @@
+---
+title: "Wnt-high and Wnt-low tumors, characteristics"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("../differential_analysis/definitions_analysis_visualization.R")
+
+library(ComplexHeatmap)
+library(circlize)
+```
+
+# Aim of the analysis
+
+This script generates the first Figure of the manuscript related to the APC/colorectal cancer project that I have been working on together with scientists from DKFZ. The aim of the figure is to introduce the four different consensus molecular subtypes (CMS) of colorectal cancer and their different levels of Wnt signaling, the different driver mutations, localization in the colon, processes of mutagenesis etc....
+
+There are two available datasets:
+* TCGA 2015: RNAseq data, mutation data
+* TCGA 2019: RNAseq and proteomics data
+  
+# Preparation of datasets
+
+## Prepare TCGA 2015 RNAseq data
+
+Read in the sample annotation table, the classification of samples into CMS (which have been predicted in a preprocessing step), as well as the mutation data.
+```{r}
+sampleTable <- readRDS("../r_data/TCGA_COAD_READ_rnaseq_annotation.RData")
+# CMS class contains a "prediction" column that contains the predicted subtypes CMS1,2,3 or 4.
+# if prediction was not successfull, this column is NA
+CMS_class <- readRDS("../r_data/TCGA_CMS_classification_CMSclassifier.RData")
+mutation_data <- readRDS("../r_data/TCGA_COAD_READ_mutations_mutect.RData")
+
+# normalized RNAseq count data
+all_counts <- readRDS( "../r_data/TCGA_allcounts_normalized.RData")
+```
+
+### Assemble samples and CMS classes
+
+Normal tissue is assigned to CMS class "normal".
+
+```{r}
+classified_samples <- left_join(sampleTable, CMS_class, by = "id") %>%
+    # we want to keep the normal tissue samples and set the prediction column to "normal"
+    dplyr::mutate(prediction = ifelse(sample_type == "Solid Tissue Normal", "normal", prediction))
+```
+
+### Location of Proximal/Distal colon
+
+Classify the tissue resection sites according to proximal or distal colon location. 
+"NOS" samples, where the exact location is not known are assigned "Colon, NOS" or "Rectum, NOS".
+Proximal: "Cecum", "Ascending colon", "Transverse colon", "Hepatic flexure of colon", "Splenic flexure of colon"
+Distal: "Descending colon", "Rectosigmoid junction", "Sigmoid colon"
+
+```{r}
+classified_samples <- classified_samples %>%
+    dplyr::mutate(proximal_distal = ifelse(site_of_resection_or_biopsy %in% c("Cecum", "Ascending colon", "Transverse colon","Splenic flexure of colon",
+                                                                              "Hepatic flexure of colon"), "Colon proximal",
+                                           ifelse(site_of_resection_or_biopsy %in% c("Descending colon", 
+                                                                                     "Rectosigmoid junction", "Sigmoid colon"), "Colon distal", 
+                                                  ifelse(site_of_resection_or_biopsy %in% c("Colon, NOS", "Rectum, NOS"),site_of_resection_or_biopsy, NA))))
+
+# put factor into right order
+classified_samples$proximal_distal <- factor(classified_samples$proximal_distal, 
+                                             levels = c("Colon, NOS","Colon proximal","Colon distal", "Rectum, NOS"))
+```
+
+## Prepare TCGA 2019 proteomics data
+
+Read in RNAseq and proteomics data. Sample classification into CMS
+```{r}
+rnaseq <- read_delim("../external_data/Human__CPTAC_COAD__UNC__RNAseq__HiSeq_RNA__03_01_2017__BCM__Gene__BCM_RSEM_UpperQuartile_log2.cct", delim = "\t")
+
+# this proteomics data is tumor vs. normal normalized
+proteomics <- read_delim("../external_data/Human__CPTAC_COAD__PNNL__Proteome__TMT__03_01_2017__BCM__Gene__Tumor_Normal_log2FC.cct", delim = "\t")
+
+# this annotation includes CMS calling which was performed using CMSclassifier
+annotation <- read_delim("../external_data/NIHMS1524432-supplement-8.csv", delim = "\t") %>%
+    dplyr::filter(SampleID != "Type") %>%
+    dplyr::rename(participant = SampleID)
+```
+
+Put RNAseq data into right format
+```{r}
+library(data.table)
+rna_df <- rnaseq[,-1] %>% transpose()
+colnames(rna_df) <- rnaseq$attrib_name
+rna_df$participant <- colnames(rnaseq[-1])
+
+rna_df <- rna_df %>%
+    gather(key = "gene", value = "rna", -participant)
+
+```
+
+Put proteomics data into right format
+```{r}
+prot_df <- proteomics[,-1] %>% transpose()
+colnames(prot_df) <- proteomics$attrib_name
+prot_df$participant <- colnames(proteomics[-1])
+
+prot_df <- prot_df %>%
+    gather(key = "gene", value = "protein", -participant)
+```
+
+
+# Differences in Wnt signaling
+
+### Expression of Wnt target genes heatmap (only TCGA 2015 dataset)
+
+We want to generate a heatmap with expression of the different genes belonging to:
+MSigDB annotation HALLMARK_WNT_BETA_CATENIN_SIGNALING 
+
+```{r}
+counts_table <- all_counts %>% t() %>% as.data.frame() %>%
+    rownames_to_column("id")
+```
+
+```{r}
+annotated_counts <- left_join(counts_table, classified_samples , by = "id") 
+```
+
+```{r}
+m_df = msigdbr(species = "Homo sapiens", category = "H")
+ctnnb1_targets <- m_df %>%
+        dplyr::filter(gs_name == "HALLMARK_WNT_BETA_CATENIN_SIGNALING")
+
+ctnnb1_targets$ENSEMBL <- mapIds(org.Hs.eg.db,keys=as.character(ctnnb1_targets$human_gene_symbol),
+                     column="ENSEMBL", keytype="SYMBOL", multiVals="first")
+```
+
+Heatmap per sample
+ 
+```{r}
+heatmap_mat <- annotated_counts %>%
+    dplyr::select(ctnnb1_targets$ENSEMBL, prediction)
+```
+
+```{r}
+# column 43 contains the CMS prediciton
+mat <- as.matrix(t(heatmap_mat[,-43]))
+colnames(mat) <- heatmap_mat$prediction
+
+# we only want to see genes with a certain expression level
+mat <- mat[rowMedians(mat) > 100,]
+
+mat <- log2((mat+1)/rowMedians(mat+1))
+```
+```{r}
+col_fun = colorRamp2(c(-4, 0, 4), c(ghm_low, ghm_mid, ghm_high))
+```
+```{r}
+ht_opt$TITLE_PADDING = unit(c(7, 8.5), "points")
+heatmap_mat$prediction <- ifelse(is.na(heatmap_mat$prediction), "NA", heatmap_mat$prediction)
+anno <- HeatmapAnnotation(class = heatmap_mat$prediction,
+    col = list(class = c("CMS1" = cms1_c, "CMS2" = cms2_c, "CMS3" = cms3_c, "CMS4" = cms4_c, "normal" = "black", "NA" = gr2)), 
+    annotation_name_side = "left")
+
+wnt_heatmap <- Heatmap(mat, name = "expression", 
+  col = col_fun, heatmap_width = unit(0.8, "npc"),
+    row_title = "CTNNB1 target genes",
+  show_column_names = FALSE,
+    column_split = 3, row_names_gp = gpar(fontsize = 7),
+    column_title_gp = gpar(fill = c(wntl_c, wntl_c, wnth_c), col = "white"), column_title = c("", "Wnt low", "Wnt high"), 
+    top_annotation = anno, heatmap_legend_param = list(title_position = "lefttop-rot"))
+```
+Get the dendrograms
+
+```{r}
+wnt_heatmap_int <- draw(wnt_heatmap, heatmap_legend_side = "bottom"
+  )
+col_order <- column_order(wnt_heatmap_int)
+
+wnt_low_nb <- annotated_counts$id[c(col_order[[1]], col_order[[2]])]
+wnt_high <- annotated_counts$id[col_order[[3]]]
+
+sum(length(wnt_low_nb), length(wnt_high))
+
+# export wnt low and wnt high list
+saveRDS(wnt_low_nb, "../r_data/wnt_low_list_tcga.RData")
+saveRDS(wnt_high, "../r_data/wnt_high_list_tcga.RData")
+```
+
+### AXIN2 expression
+
+Generate a boxplot with AXIN2 expression levels in the different sample groups.
+AXIN2 is one of the most widely accepten Wnt target genes.
+
+```{r}
+df_plot_gene <- left_join(counts_table %>% dplyr::select(id, ENSG00000168646), 
+                          classified_samples, by = "id") 
+
+axin2_tcga1 <- df_plot_gene %>%
+  dplyr::mutate(prediction = ifelse(is.na(prediction), "NA", prediction)) %>%
+  ggplot(aes(x = prediction, y = log2(ENSG00000168646), color = prediction)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(size = 0.8) +
+  # the colors are assigned in the definitions.R file that I also use for the other figures
+  scale_color_manual(values = c(cms1_c, cms2_c, cms3_c, cms4_c, gr2, gr1))+
+  theme_bw() + theme(legend.position = "none") +
+  scale_x_discrete(labels = c("CMS1","CMS2","CMS3","CMS4","NA","normal")) +
+  xlab("") + ylab(expression(italic(AXIN2) ~ expression ~ (log[2]))) +
+  ggtitle("TCGA-COAD and TCGA-READ\n(transcriptomic)") +
+  theme(
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+### AXIN2 and CTNNB1 expression protein
+
+In the TCGA 2019 dataset show the correlation between AXIN2 expression and CTNNB1 protein level.
+CTNNB1 is a transcritpion factor that is stabilized on protein level when Wnt signaling is acitve.
+
+```{r}
+axin2_exp <- rna_df %>% dplyr::filter(gene == "AXIN2")
+ctnnb1_prot <- prot_df %>% dplyr::filter(gene == "CTNNB1")
+
+axin2_ctnnb1_plot <- inner_join(inner_join(axin2_exp, ctnnb1_prot, by = c("participant")),annotation,
+           by = "participant") %>%
+  dplyr::mutate(CMS = ifelse(is.na(CMS), "NA", CMS)) %>%
+  ggplot(aes(x = protein, y = rna, color = CMS)) +
+  geom_point(size=0.8) +
+  # the colors are assigned in the definitions.R file that I also use for the other figures
+  scale_color_manual(values = c(cms1_c, cms2_c, cms3_c, cms4_c, gr2))+
+  theme_bw() +
+    theme(legend.position = "none") +
+  xlab("CTNNB1 protein level") + ylab(expression(italic(AXIN2) ~ expression ~ (log[2]))) +
+  ggtitle("Human colon cancer\n(transcriptomic + proteomic)") +
+  theme(
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+# Grid shosing the different mutational and molecular characteristics in the different CMS groups and how they correlate with Wnt activation
+
+## Ordering of samples according to AXIN2 expression (waterfall plots)
+
+```{r}
+ax2_thr <- tcga_axin2_threshold 
+
+pre_tile_df <- df_plot_gene  %>%
+    # only include samples for which mutation data is availbale 
+    dplyr::filter(cases_sample %in% mutation_data$cases_sample) %>% 
+  # ENSG00000168646 is the ensembl identifier for AXIN2
+  dplyr::select(id, cases_sample,ENSG00000168646, site_of_resection_or_biopsy, tumor_stage, gender, msi_status, prediction, proximal_distal) %>%
+  # boolean Wnt dependency
+  #dplyr::mutate(WNT = ifelse(log2(ENSG00000168646) <= ax2_thr, "low", "high"))
+  dplyr::mutate(WNT = ifelse(id %in% wnt_low_nb , "low", "high"))
+
+
+tile_df <- pre_tile_df  %>%
+    dplyr::filter(prediction != "normal") %>%
+  group_by(prediction) %>%
+  arrange(ENSG00000168646) %>%
+  # this is my way of attributing a rank
+  dplyr::mutate(ones = 1, rank = cumsum(ones))
+
+# waterfall plot
+axin2_waterfall <- tile_df %>%
+  ggplot(aes(x = rank, y = log2(ENSG00000168646), color = WNT)) +
+  geom_point(size=0.8) +
+  facet_grid(~prediction,
+             space="free",
+             scale="free_x") + theme_bw() + ylim(c(5,15)) +
+  ylab(expression(italic(AXIN2))) + theme(axis.text.x = element_blank(),
+                              axis.ticks.x = element_blank(),
+                              axis.title.x = element_blank() ) +
+  #geom_hline(yintercept = ax2_thr) + 
+   scale_color_manual(values = c(wnth_c, wntl_c)) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank()
+  )
+```
+
+Tile plot with microsatellite instability status and colon location
+The plot shows that MSI samples are enriched in proximal colon and tend to have a low Wnt activation (majorly in CMS1, but also CMS4 and 3)
+```{r}
+msi <- tile_df %>%
+  dplyr::filter(!is.na(proximal_distal)) %>%
+  # we don't want to display samples with undefined Microsatellite status
+  dplyr::filter(!is.na(msi_status) & msi_status != "Indeterminate") %>%
+  ggplot(aes(x = rank, y = msi_status, fill = proximal_distal)) +
+  geom_tile() +
+  facet_grid(~prediction,
+             space="free",
+             scale="free_x") + theme_bw() +
+  scale_fill_manual(limits = c("Colon, NOS","Colon proximal","Colon distal", "Rectum, NOS"),
+                     values = c(gr2, prox_c, dist_c, rectum_c)) +
+  theme(axis.title.y= element_blank()) +
+  xlab("Rank according to AXIN2 expression") +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank()
+  )
+```
+
+Mutation plots of candidate genes (gene choice based on literature)
+```{r}
+gene_mutations <- mutation_data %>%
+    dplyr::filter(Hugo_Symbol %in% c("APC","AXIN2", "CTNNB1","BRAF","KRAS", "RNF43", "CTNNB1")) %>% 
+  # only look at protein altering mutations
+    dplyr::filter(One_Consequence %in% c("missense_variant","stop_gained","frameshift_variant")) %>%
+  # frameshift and stop gain mutant are grouped together into the "truncating" class
+    dplyr::mutate(mutation = ifelse(One_Consequence == "missense_variant", "missense", "truncating")) #%>%
+    #dplyr::select(Hugo_Symbol,cases_sample,mutation) # %>% unique()
+```
+
+```{r}
+mutation_plot <- left_join(gene_mutations,tile_df , by = "cases_sample") %>%
+  dplyr::filter(!is.na(prediction)) %>%
+  ggplot(aes(x = rank, y = Hugo_Symbol, fill = mutation)) +
+  geom_tile() + 
+  facet_grid(~prediction,
+             space="free",
+             scale="free_x") + theme_bw() +
+    scale_fill_manual(values = c( dist_c,gr1)) +
+  theme(axis.title.y= element_blank(),
+                                      axis.title.x = element_blank(),
+                                      axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank()
+  )
+```
+
+
+# Statistics Wnt independent, Wnt dependent
+ MSI / colon localization
+```{r}
+loc_sum <- pre_tile_df %>%
+  dplyr::filter(!is.na(proximal_distal)) %>%
+  # we don't want to display samples with undefined Microsatellite status
+  dplyr::filter(!is.na(msi_status) & msi_status != "Indeterminate") %>%
+  group_by(WNT, proximal_distal) %>%
+  summarize(n = n())%>%
+  ggplot(aes(x = WNT, y = n, fill = proximal_distal)) +
+  geom_bar(position = "fill",stat = "identity") +
+  scale_fill_manual(name = "", limits = c("Colon, NOS","Colon proximal","Colon distal", "Rectum, NOS"),
+                     values = c(gr2, prox_c, dist_c, rectum_c)) +
+  scale_x_discrete(limits = c("low", "high")) +
+  ggtitle("Localization") + theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  scale_y_continuous(breaks = c(0,0.5,1)) +
+  ylab("Relative frequency") +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+```{r}
+msi_sum <- pre_tile_df %>%
+  dplyr::filter(!is.na(proximal_distal)) %>%
+  # we don't want to display samples with undefined Microsatellite status
+  dplyr::filter(!is.na(msi_status) & msi_status != "Indeterminate") %>%
+  group_by(WNT, msi_status) %>%
+  summarize(n = n())%>%
+  ggplot(aes(x = WNT, y = n, fill = msi_status)) +
+  geom_bar(position = "fill",stat = "identity") +
+  scale_fill_manual(values = c(gr1,gr2,gr3)) +
+  ggtitle("DNA mismatch repair")+ theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+
+APC/CTNNB1/KRAS/BRAF
+```{r}
+apc_int_df <- left_join(pre_tile_df , 
+           gene_mutations %>% dplyr::filter(Hugo_Symbol == "APC"), by = "cases_sample") %>%
+  dplyr::filter(!is.na(proximal_distal)) %>%
+  # we don't want to display samples with undefined Microsatellite status
+  dplyr::filter(!is.na(msi_status) & msi_status != "Indeterminate") %>%
+  # only look at truncating and count the number of occurences
+  dplyr::group_by(cases_sample, WNT) %>%
+  dplyr::mutate(mutation = ifelse(is.na(mutation), "none", mutation)) %>%
+  dplyr::filter(mutation != "missense") %>%
+  summarize(n = sum(mutation == "truncating", na.rm = FALSE)) %>%
+  dplyr::mutate(n = ifelse(n>=2, ">=2", as.character(n))) %>%
+  group_by(WNT, n) %>%
+  summarize(count = n())
+
+apc_int_df$n <- factor(apc_int_df$n,levels = c("0","1",">=2"))
+
+apc_sum <- apc_int_df %>%
+  ggplot(aes(x = WNT, y = count, fill = n)) +
+  geom_bar(position = "fill",stat = "identity") +
+    scale_fill_manual(name="truncation\ncount",values = c(gr3,gr2,gr1))+
+  scale_x_discrete(limits = c("low", "high")) +
+  scale_y_continuous(breaks = c(0,0.5,1)) +
+  ylab("Relative frequency") + 
+  ggtitle("APC truncations") +  
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+```{r}
+braf_sum <- left_join(pre_tile_df , 
+           gene_mutations %>% dplyr::filter(Hugo_Symbol == "BRAF"), by = "cases_sample") %>%
+  dplyr::filter(!is.na(proximal_distal)) %>%
+  # we don't want to display samples with undefined Microsatellite status
+  dplyr::filter(!is.na(msi_status) & msi_status != "Indeterminate") %>%
+  dplyr::filter(is.na(mutation) | mutation == "missense") %>%
+  dplyr::group_by(cases_sample, WNT) %>%
+  dplyr::mutate(mutation_type = ifelse(is.na(HGVSp_Short), "none", 
+                                       ifelse(HGVSp_Short== "p.V600E", "p.V600E", "other\nmissense"))) %>%
+ # I checked that there are not 2 mutations in 1 sample
+  group_by(WNT, mutation_type) %>%
+  summarize(n = n()) %>%
+  ggplot(aes(x = WNT, y = n, fill = mutation_type)) +
+  geom_bar(position = "fill",stat = "identity") +
+    scale_fill_manual(name = "", values = c(gr3, gr1,dist_c)) +
+  scale_x_discrete(limits = c("low", "high")) +
+  scale_y_continuous(breaks = c(0,0.5,1)) +
+  ylab("Relative frequency") + 
+  ggtitle("BRAF mutations") +  
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+```{r}
+rnf43_int_df <- left_join(pre_tile_df , 
+           gene_mutations %>% dplyr::filter(Hugo_Symbol == "RNF43"), by = "cases_sample") %>%
+  dplyr::filter(!is.na(proximal_distal)) %>%
+  # we don't want to display samples with undefined Microsatellite status
+  dplyr::filter(!is.na(msi_status) & msi_status != "Indeterminate") %>%
+  dplyr::filter(is.na(mutation) | mutation == "missense" | mutation == "truncating") %>%
+  dplyr::group_by(cases_sample, WNT) %>%
+  dplyr::mutate(mutation_type = ifelse(is.na(mutation), "none", 
+    ifelse(HGVSp_Short == "p.G659Vfs*41", "G659Vfs*41", 
+      ifelse(mutation == "truncating", "other\ntruncating", mutation))))
+
+rnf43_int_df$mutation_type <- factor(rnf43_int_df$mutation_type,levels = c("none","missense","G659Vfs*41","other\ntruncating"))
+
+rnf_sum <- rnf43_int_df %>%
+ # I checked that there are not 2 mutations in 1 sample
+  group_by(WNT, mutation_type) %>%
+  summarize(n = n()) %>%
+  ggplot(aes(x = WNT, y = n, fill = mutation_type)) +
+  geom_bar(position = "fill",stat = "identity") +
+    scale_fill_manual(name = "", values = c(gr3, gr2, dist_c, gr1)) +
+  scale_x_discrete(limits = c("low", "high")) +
+  scale_y_continuous(breaks = c(0,0.5,1)) +
+  ylab("Relative frequency") + 
+  ggtitle("RNF43 mutations") +  
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+
+Figure out which are the most important KRAS mutations
+```{r}
+left_join(tile_df , 
+           gene_mutations %>% dplyr::filter(Hugo_Symbol == "KRAS"), by = "cases_sample") %>%
+  dplyr::filter(!is.na(proximal_distal)) %>%
+  # we don't want to display samples with undefined Microsatellite status
+  dplyr::filter(!is.na(msi_status) & msi_status != "Indeterminate") %>%
+  dplyr::filter(is.na(mutation) | mutation == "missense") %>%
+  group_by(Protein_position) %>%
+  summarize(n = n())%>%
+  arrange(desc(n))
+```
+
+
+```{r}
+kras_df <- left_join(tile_df , 
+           gene_mutations %>% dplyr::filter(Hugo_Symbol == "KRAS"), by = "cases_sample") %>%
+  dplyr::filter(!is.na(proximal_distal)) %>%
+  # we don't want to display samples with undefined Microsatellite status
+  dplyr::filter(!is.na(msi_status) & msi_status != "Indeterminate") %>%
+  dplyr::filter(is.na(mutation) | mutation == "missense") %>%
+  dplyr::group_by(cases_sample, WNT) %>%
+  dplyr::mutate(mutation_type = ifelse(is.na(Protein_position), "none", 
+                                       ifelse(Protein_position == "12/189" | Protein_position == "13/189", "G12|G13", 
+                                             "other\nmissense"))) %>%
+ # I checked that there are not 2 mutations in 1 sample
+  group_by(WNT, prediction, mutation_type) %>%
+  summarize(n = n())
+
+kras_df$mutation_type <- factor(kras_df$mutation_type, levels = c("none","other\nmissense","G12|G13" ))
+
+kras_sum <- kras_df %>%
+  ggplot(aes(x = WNT, y = n, fill = mutation_type)) +
+  geom_bar(position = "fill",stat = "identity") +
+    scale_fill_manual(name = "", values = c(gr3, gr1,dist_c)) + theme_bw()+ 
+  theme(axis.text.x = element_text(angle = 45, hjust=1))+
+  scale_y_continuous(breaks = c(0,0.5,1)) +
+    scale_x_discrete(limits = c("low", "high")) +
+  ylab("Relative frequency") + 
+  ggtitle("KRAS mutations") +  
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+Counts in groups
+```{r}
+pre_tile_df %>%
+  group_by(WNT) %>%
+  summarise(n = n())
+```
+
+# Assemble Figure
+
+This is a very unelegant combination of cowplot and patchwork packages, but I did not get it aligned and 
+sized properly without combining both
+
+```{r}
+
+wnt_heatmap_plot = grid.grabExpr(draw(wnt_heatmap, padding = unit(c(0,0,0,10),"mm")))
+
+col1 <- plot_grid(axin2_tcga1,
+                  axin2_ctnnb1_plot, ncol=1, labels = c("B","C"))
+
+row1 <- plot_grid(
+  wnt_heatmap_plot,
+  col1, rel_widths = c(2,1), labels = c("A",""))
+
+
+row2 <- plot_grid(axin2_waterfall,
+                  mutation_plot + theme(strip.background = element_blank(), 
+                              strip.text = element_blank()),
+                  msi + theme(strip.background = element_blank(), 
+                              strip.text = element_blank()),
+                  rel_heights = c(0.7,0.8,0.75),ncol=1, align = "v", axis = "lr",
+                  labels = c("D","E",""))
+
+row3 <- plot_grid(apc_sum + theme(legend.box.margin=margin(0,0,0,-10)),
+  braf_sum + theme(legend.box.margin=margin(0,0,0,-10)), 
+  rnf_sum + theme(legend.box.margin=margin(0,0,0,-10)),
+  kras_sum + theme(legend.box.margin=margin(0,0,0,-10)), 
+  loc_sum  + theme(legend.box.margin=margin(0,0,0,-10)),
+  nrow=1,
+                  rel_widths = c(0.7,0.72,0.74,0.7,0.82),
+  labels = c("F","G","H","I", "J"))
+
+
+fig1 <- row1/ row2 /row3  + plot_layout(heights = c(1.8,1.3, 0.8))
+
+save_plot("assembled_figures/Figure1.pdf",
+        fig1,
+         base_height = 10, base_width = 9)
+
+save_plot("assembled_figures/Figure1.png",
+        fig1,
+         base_height = 10, base_width = 9)
+```
+

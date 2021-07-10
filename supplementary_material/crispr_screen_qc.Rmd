@@ -1,0 +1,275 @@
+---
+title: "CRISPR_screen_QC"
+author: Katharina Imkeller
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(gscreend)
+library(tidyverse)
+library(cowplot)
+```
+
+## The screen itself
+
+Load table with gRNA abundances at different screening timepoints.
+
+```{r}
+complete_table <- read_csv("../external_data/CRISPR_screen_gRNA_counts.csv")
+```
+
+## Correlation between replicates
+
+```{r}
+complete_table_norm <- complete_table %>%
+    # calculate normalized counts
+    dplyr::mutate_at(.funs = funs(sn = ./sum(.) * sum(plasmid_library_R1)), .vars = 5:12) %>%
+    dplyr::select(sgRNA,contains("_sn")) 
+```
+```{r}
+table_long <- complete_table_norm %>%
+    pivot_longer(cols = contains("_sn"), names_to = "sample") %>%
+    separate(sample, into = c("cl", "mut", "tp", "rep", "sn"))
+```
+
+```{r}
+correlation_table <- table_long %>%
+    pivot_wider(names_from = "rep", values_from = "value") %>%
+    group_by(cl, mut) %>%
+    summarize(correlation = cor(R1,R2))
+```
+
+
+```{r}
+correlation_plot <- table_long %>%
+    pivot_wider(names_from = "rep", values_from = "value") %>%
+    ggplot(aes(x = log2(R1+1), y = log2(R2+1))) +
+    geom_hex(bins = 50) +
+    geom_smooth(method = "lm", color = "red", size=0.5) +
+    theme_bw() +
+    facet_grid(cl~mut) + coord_fixed(ratio=1)
+```
+
+
+# Precision recall
+
+Analyse the HCT116 WT screen
+```{r}
+complete_table %>% group_by(gene) %>%
+    summarize(n = n()) %>% arrange(desc(n))
+
+counts_matrix <- cbind(complete_table$plasmid_library_R1,
+    complete_table$HCT116_WT_T14_R1,
+    complete_table$HCT116_WT_T14_R2)
+
+rowData <- data.frame(sgRNA_id = complete_table$sgRNA,
+                           gene = complete_table$gene)
+
+colData <- data.frame(samplename = c("plasmid", "HCT116_WT", "HCT116_WT"),
+                      # timepoint naming convention: 
+                      # T0 -> reference, 
+                      # T1 -> selected
+                      timepoint = c("T0", "T1", "T1"))
+
+se_HCT116_WT <- SummarizedExperiment(assays=list(counts=counts_matrix),
+                        rowData=rowData, colData=colData)
+
+pse_HCT116_WT <- createPoolScreenExp(se_HCT116_WT)
+
+pse_HCT116_WT <- RunGscreend(pse_HCT116_WT)
+
+saveRDS(pse_HCT116_WT, "../r_data/gscreend_HCT116_WT.RData")
+```
+Analyse the HCT116 APC screen
+```{r}
+counts_matrix <- cbind(complete_table$plasmid_library_R1,
+    complete_table$HCT116_APC_T17_R1,
+    complete_table$HCT116_APC_T17_R2)
+
+colData <- data.frame(samplename = c("plasmid", "HCT116_APC", "HCT116_APC"),
+                      # timepoint naming convention: 
+                      # T0 -> reference, 
+                      # T1 -> selected
+                      timepoint = c("T0", "T1", "T1"))
+
+se_HCT116_APC <- SummarizedExperiment(assays=list(counts=counts_matrix),
+                        rowData=rowData, colData=colData)
+
+pse_HCT116_APC <- createPoolScreenExp(se_HCT116_APC)
+
+pse_HCT116_APC <- RunGscreend(pse_HCT116_APC)
+
+saveRDS(pse_HCT116_APC, "../r_data/gscreend_HCT116_APC.RData")
+```
+Analyse the RKO WT screen
+```{r}
+counts_matrix <- cbind(complete_table$plasmid_library_R1,
+    complete_table$RKO_WT_T20_R1,
+    complete_table$RKO_WT_T20_R1)
+
+colData <- data.frame(samplename = c("plasmid", "RKO_WT", "RKO_WT"),
+                      # timepoint naming convention: 
+                      # T0 -> reference, 
+                      # T1 -> selected
+                      timepoint = c("T0", "T1", "T1"))
+
+se_RKO_WT <- SummarizedExperiment(assays=list(counts=counts_matrix),
+                        rowData=rowData, colData=colData)
+
+pse_RKO_WT <- createPoolScreenExp(se_RKO_WT)
+
+pse_RKO_WT <- RunGscreend(pse_RKO_WT)
+
+saveRDS(pse_RKO_WT, "../r_data/gscreend_RKO_WT.RData")
+```
+
+Analyse the RKO APC screen
+```{r}
+counts_matrix <- cbind(complete_table$plasmid_library_R1,
+    complete_table$RKO_APC_T20_R1,
+    complete_table$RKO_APC_T20_R1)
+
+colData <- data.frame(samplename = c("plasmid", "RKO_APC", "RKO_APC"),
+                      # timepoint naming convention: 
+                      # T0 -> reference, 
+                      # T1 -> selected
+                      timepoint = c("T0", "T1", "T1"))
+
+se_RKO_APC <- SummarizedExperiment(assays=list(counts=counts_matrix),
+                        rowData=rowData, colData=colData)
+
+pse_RKO_APC <- createPoolScreenExp(se_RKO_APC)
+
+pse_RKO_APC <- RunGscreend(pse_RKO_APC)
+
+saveRDS(pse_RKO_APC, "../r_data/gscreend_RKO_APC.RData")
+```
+
+```{r}
+pse_HCT116_WT <- readRDS("../r_data/gscreend_HCT116_WT.RData")
+pse_HCT116_APC <- readRDS("../r_data/gscreend_HCT116_APC.RData")
+pse_RKO_WT <- readRDS("../r_data/gscreend_RKO_WT.RData")
+pse_RKO_APC <- readRDS("../r_data/gscreend_RKO_APC.RData")
+```
+
+```{r}
+results_combined <- rbind(ResultsTable(pse_HCT116_WT) %>% dplyr::mutate(screen = "HCT116_WT"),
+    ResultsTable(pse_HCT116_APC) %>% dplyr::mutate(screen = "HCT116_APC"),
+    ResultsTable(pse_RKO_WT) %>% dplyr::mutate(screen = "RKO_WT"),
+    ResultsTable(pse_RKO_APC) %>% dplyr::mutate(screen = "RKO_APC"))
+```
+
+Import BAGEL essential and non essental gene list
+```{bash}
+wget https://raw.githubusercontent.com/hart-lab/bagel/master/CEGv2.txt
+wget https://raw.githubusercontent.com/hart-lab/bagel/master/NEGv1.txt
+```
+
+```{r}
+core_essential <- read.delim("CEGv2.txt")
+non_essential <- read.delim("NEGv1.txt")
+```
+
+```{r}
+annotated_results <- results_combined %>%
+    dplyr::mutate(group = ifelse(Name %in% non_essential$GENE, "NEG", 
+        ifelse(Name %in% core_essential$GENE, "CEG", NA)))
+```
+
+```{r}
+prec_recall_df <- annotated_results %>%
+    dplyr::filter(!is.na(group)) %>%
+    group_by(screen) %>%
+    arrange(fdr, lfc) %>%
+    dplyr::mutate(ones = 1, rank = cumsum(ones)) %>%
+    dplyr::mutate(TP_count = cumsum(group=="CEG"),
+        FP_count = cumsum(group=="NEG")) %>%
+    dplyr::mutate(recall = TP_count/sum(group=="CEG"), 
+        precision = TP_count/rank)
+```
+
+```{r}
+prec_recall_plot <- prec_recall_df %>%
+    ggplot(aes(x = recall, y = precision, color = screen)) +
+    geom_line() +
+    theme_bw() +
+    theme(legend.position = c(0.3,0.4))  +
+    ggtitle("Precision-recall for CRISPR screens") 
+```
+
+## Model difference between APC trunc and APC wt
+
+Load data T1 vs. T1
+```{r}
+pse_HCT <- readRDS("../r_data/HCT_WT_vs_APC.RData")
+pse_RKO <- readRDS("../r_data/RKO_WT_vs_APC.RData")
+```
+
+
+MA plot
+```{r}
+negative_gene_hct <- ResultsTable(pse_HCT) %>%
+    dplyr::mutate(group = ifelse(Name %in% non_essential$GENE, "non-essential", 
+        ifelse(Name %in% core_essential$GENE, "core-essential", "other"))) %>%
+    ggplot(aes(x = lfc, y = -log10(fdr))) +
+    geom_point(alpha = 0.3) + theme_bw() + facet_wrap(~group) +
+    ggtitle("More essential in HCT116-APC-trunc\nthan in HCT116-APC-WT")+
+    ylab("-log10(p-value)") +
+    geom_hline(yintercept = -log10(0.1))
+```
+
+```{r}
+positive_gene_hct <- ResultsTable(pse_HCT, direction = "positive") %>%
+    dplyr::mutate(group = ifelse(Name %in% non_essential$GENE, "non-essential", 
+        ifelse(Name %in% core_essential$GENE, "core-essential", "other"))) %>%
+    ggplot(aes(x = lfc, y = -log10(fdr))) +
+    geom_point(alpha = 0.3) + theme_bw() + facet_wrap(~group) +
+    ggtitle("More essential in HCT116-APC-WT\nthan in HCT116-APC-trunc")+
+    ylab("-log10(p-value)") +
+    geom_hline(yintercept = -log10(0.1))
+```
+
+```{r}
+negative_gene_rko <- ResultsTable(pse_RKO) %>%
+    dplyr::mutate(group = ifelse(Name %in% non_essential$GENE, "non-essential", 
+        ifelse(Name %in% core_essential$GENE, "core-essential", "other"))) %>%
+    ggplot(aes(x = lfc, y = -log10(fdr))) +
+    geom_point(alpha = 0.3) + theme_bw() + facet_wrap(~group) +
+    ggtitle("More essential in RKO-APC-trunc\nthan in RKO-APC-WT")+
+    ylab("-log10(p-value)") +
+    geom_hline(yintercept = -log10(0.1))
+```
+```{r}
+positive_gene_rko <- ResultsTable(pse_RKO, direction = "positive") %>%
+    dplyr::mutate(group = ifelse(Name %in% non_essential$GENE, "non-essential", 
+        ifelse(Name %in% core_essential$GENE, "core-essential", "other"))) %>%
+    ggplot(aes(x = lfc, y = -log10(fdr))) +
+    geom_point(alpha = 0.3) + theme_bw() + facet_wrap(~group) +
+    ggtitle("More essential in RKO-APC-WT\nthan in RKO-APC-trunc") +
+    ylab("-log10(p-value)") +
+    geom_hline(yintercept = -log10(0.1))
+```
+
+# Assemble figure
+
+```{r}
+library(gridExtra)
+dotplots <- plot_grid(negative_gene_hct,positive_gene_hct,
+    negative_gene_rko, positive_gene_rko)
+```
+```{r}
+tt <- ttheme_default(colhead=list(fg_params = list(parse=TRUE)))
+tbl <- tableGrob(correlation_table, rows=NULL, theme=tt)
+
+col1 <- plot_grid(tbl, correlation_plot,labels = c("A", "B"), ncol=1, rel_heights = c(0.5,1))
+col2 <- plot_grid(prec_recall_plot, NULL, NULL, NULL, labels = c("C","","",""), 
+    rel_heights = c(1,0.5),rel_widths = c(1,0.5))
+
+row1 <- plot_grid(col1,col2)
+
+fig_s2 <- plot_grid(row1, dotplots, ncol=1, rel_heights = c(0.8,1), labels = c("","D"))
+save_plot("FigureS2.pdf", fig_s2, base_height = 10, base_width = 9)
+```
+
+

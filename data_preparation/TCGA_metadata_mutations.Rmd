@@ -1,0 +1,163 @@
+---
+title: "Access TCGA metadata and mutation data"
+author: Katharina Imkeller
+date: 01. June 2021
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Aim
+
+This script assembles TCGA COAD and READ data using the TCGAbiolinks and the GenomicsDataCommons packages.
+The aim is to generate RData tables containing clinical information, but also IDs of the sequencing files, read lengths and mutation calls.
+
+```{r, message=FALSE}
+library(tidyverse)
+library(TCGAbiolinks)
+library(GenomicDataCommons)
+```
+
+# Getting all sequencing files and their respective read length
+
+Get all colorectal cancer samples and their read length. Read length annotation is necessary in order to be able later on to filter out files with unwanted read length (batch effect).
+
+```{r}
+query = files() %>%
+    GenomicDataCommons::select(c(grep("length",available_fields('files'),value = TRUE),
+                                 "file_name",
+                                 "associated_entities.entity_submitter_id",
+                                 "downstream_analyses.output_files.file_id",
+                                 "downstream_analyses.submitter_id" 
+                                 )) %>%
+    GenomicDataCommons::filter(~ cases.project.project_id %in% c('TCGA-COAD', 'TCGA-READ') &
+               data_type == 'Aligned Reads' &
+               experimental_strategy == 'RNA-Seq' &
+               data_format == 'BAM') 
+
+result <- query %>% response_all() 
+result <- result$results
+result <- cbind(result, map_df(result$analysis$metadata$read_groups,~.x))
+result <- cbind(result, map_df(result$associated_entities,~.x))
+
+# table matching rnaseq files to read length
+read_length_table <- result %>% unnest(downstream_analyses, names_repair = "minimal") %>%
+    dplyr::select(submitter_id, read_length, entity_submitter_id) %>%
+    dplyr::filter(grepl("_count", submitter_id)) 
+```
+
+# Access TCGAbiolinks to download clincal data + count data
+
+Query HTSeq data for all samples
+
+```{r, message =FALSE}
+query.exp <- GDCquery(project = c("TCGA-COAD", "TCGA-READ"), 
+    legacy = FALSE,
+    data.category = "Transcriptome Profiling",
+    data.type = "Gene Expression Quantification",
+    experimental.strategy = "RNA-Seq",
+    workflow.type  = "HTSeq - Counts",
+    sample.type = c("Primary Tumor","Solid Tissue Normal"))
+```
+
+Afterwards, this data is downloaded into ./GDCdata. This step might take some time.
+
+```{r, eval = FALSE}
+GDCdownload(query.exp)
+```
+
+```{r}
+# information concerncing downloaded rnaseq files
+rna_seq_info <- query.exp[[1]][[1]] %>% 
+  mutate(cases = substr(cases, 1,12), sample = substr(cases, 1,16)) 
+
+# join rnaseq to readn length info
+rna_seq_length_df <- left_join(rna_seq_info, read_length_table, by = "submitter_id")
+```
+
+Clinical data is accessed through **GDCquery_clinic()**.
+
+```{r}
+clinical_COAD <- GDCquery_clinic(project = "TCGA-COAD", "clinical") 
+clinical_READ <- GDCquery_clinic(project = "TCGA-READ", "clinical")
+
+# patient level information about disease
+clinical_data <- rbind(clinical_COAD, 
+                       clinical_READ[, intersect(colnames(clinical_READ), colnames(clinical_COAD))]) %>%
+    dplyr::rename(cases = submitter_id)
+```
+
+```{r}
+annotated_rnaseq_files <- left_join(rna_seq_length_df, clinical_data, by = "cases") %>% 
+  mutate(file_name = substr(file_name , 1 , nchar(file_name)-3)) 
+```
+
+MSI status
+```{r, message =FALSE}
+query <- GDCquery(project = c("TCGA-COAD", "TCGA-READ"), 
+                  data.category = "Other",
+                  legacy = TRUE,
+                  access = "open",
+                  data.type = "Auxiliary test",
+                  # I checked that matching on patient level is ok
+                  # no double entries if a patient has multiple sequencings
+                  barcode = annotated_rnaseq_files$cases) 
+
+```
+
+```{r, eval = FALSE}
+GDCdownload(query)
+```
+
+```{r, message = FALSE, results = FALSE, warning=FALSE}
+msi_results <- GDCprepare_clinic(query, "msi") %>%
+    dplyr::rename(cases = bcr_patient_barcode,
+                  msi_status = mononucleotide_and_dinucleotide_marker_panel_analysis_status) %>%
+    dplyr::select(cases, msi_status)
+    
+
+annotated_rnaseq_files <- left_join(annotated_rnaseq_files, msi_results,
+                                    by = "cases")
+```
+
+
+```{r}
+annotated_rnaseq_files %>% 
+    group_by(read_length) %>% 
+    summarise(count = n())
+```
+
+Combine the sample table
+```{r}
+sampleTable <- annotated_rnaseq_files %>%
+    dplyr::select(id, file_name, cases, project, sample_type, is_ffpe,
+                  sample.submitter_id, read_length, age_at_diagnosis, prior_malignancy,
+                  prior_treatment, site_of_resection_or_biopsy, tissue_or_organ_of_origin,
+                  tumor_stage, ajcc_pathologic_m, ajcc_pathologic_t, ajcc_pathologic_n, primary_diagnosis,
+                  height, weight, bmi, gender, days_to_death, treatments_radiation_treatment_or_therapy,
+                  treatments_pharmaceutical_treatment_or_therapy, msi_status) %>%
+    dplyr::rename(cases_sample = sample.submitter_id)
+```
+
+```{r}
+saveRDS(sampleTable, "../r_data/TCGA_COAD_READ_rnaseq_annotation.RData")
+```
+
+# Mutations
+```{r, message =FALSE, results = FALSE}
+mutations_COAD <- GDCquery_Maf(tumor = "COAD", pipelines = "mutect")
+mutations_READ <- GDCquery_Maf(tumor = "READ", pipelines = "mutect")
+
+mutations <- rbind(mutations_COAD, mutations_READ)
+mutations$cases_sample <- substr(mutations$Tumor_Sample_Barcode, 1,16)
+
+saveRDS(mutations, "../r_data/TCGA_COAD_READ_mutations_mutect.RData")
+```
+
+# Session info + package versions
+```{r}
+sessionInfo()
+```
+

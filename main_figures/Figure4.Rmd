@@ -1,0 +1,349 @@
+---
+title: "APC screen analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+source("../differential_analysis/definitions_analysis_visualization.R")
+
+```
+
+# Read in data from GSEA
+
+```{r}
+reactome_df <- readRDS("../r_data/dependencies_gsea_reactome.RData")
+cc_df <- readRDS("../r_data/dependencies_gsea_cc.RData")
+```
+Write Supplementary Table
+```{r}
+library(xlsx)
+
+cc_res_rko <- cc_df %>%
+    dplyr::filter(contrast == "RKO") %>%
+    dplyr::select(Description, setSize, enrichmentScore, pvalue, p.adjust)
+reactome_res_rko <- reactome_df %>%
+    dplyr::filter(contrast == "RKO") %>%
+    dplyr::select(Description, setSize, enrichmentScore, pvalue, p.adjust) 
+
+cc_res_hct <- cc_df %>%
+    dplyr::filter(contrast == "HCT116") %>%
+    dplyr::select(Description, setSize, enrichmentScore, pvalue, p.adjust)
+reactome_res_hct <- reactome_df %>%
+    dplyr::filter(contrast == "HCT116") %>%
+    dplyr::select(Description, setSize, enrichmentScore, pvalue, p.adjust) 
+
+cc_res_dep <- cc_df %>%
+    dplyr::filter(contrast == "DepMap") %>%
+    dplyr::select(Description, setSize, enrichmentScore, pvalue, p.adjust)
+reactome_res_dep <- reactome_df %>%
+    dplyr::filter(contrast == "DepMap") %>%
+    dplyr::select(Description, setSize, enrichmentScore, pvalue, p.adjust) 
+
+cc_res_cl <- left_join(cc_res_rko, cc_res_hct, by = "Description", suffix = c("_RKO", "_HCT116")) %>%
+  drop_na()
+
+reactome_res_cl <- left_join(reactome_res_rko, reactome_res_hct, by = "Description", suffix = c("_RKO", "_HCT116")) %>%
+  drop_na()
+  
+
+```
+
+
+# CRISPR read data
+
+gscreend output
+```{r}
+rko_rdata <- readRDS('../r_data/RKO_WT_vs_APC.RData')
+
+hct_rdata <- readRDS('../r_data/HCT_WT_vs_APC.RData')
+```
+
+```{r}
+complete_table  <- read_csv("../external_data/CRISPR_screen_gRNA_counts.csv.gz") 
+```
+Define list of genes with > 2 gRNAs
+```{r}
+valid_screen_genes <- complete_table %>%
+  separate(sgRNA, into = c("gene", "sequence"), sep = "_") %>%
+  group_by(gene) %>% summarize(count = n()) %>%
+  dplyr::filter(count >=2)
+```
+
+
+```{r}
+complete_table <- complete_table %>%
+    # calculate normalized mean
+    dplyr::mutate(library_sn = plasmid_library_R1) %>%
+    dplyr::mutate_at(.funs = funs(sn = ./sum(.) * sum(plasmid_library_R1)), .vars = 5:12)
+
+sgrna_df <- complete_table %>%
+    dplyr::mutate(HCT116_APC_R1 = HCT116_APC_T17_R1_sn/library_sn,
+                  HCT116_APC_R2 = HCT116_APC_T17_R2_sn/library_sn,
+                  HCT116_WT_R1 = HCT116_WT_T14_R1_sn/library_sn,
+                  HCT116_WT_R2 = HCT116_WT_T14_R2_sn/library_sn,
+                  RKO_APC_R1 = RKO_APC_T20_R1_sn/library_sn,
+                  RKO_APC_R2 = RKO_APC_T20_R2_sn/library_sn,
+                  RKO_WT_R1 = RKO_WT_T20_R1_sn/library_sn,
+                  RKO_WT_R2 = RKO_WT_T20_R2_sn/library_sn) %>%
+    dplyr::select(sgRNA, HCT116_APC_R1,HCT116_APC_R2,HCT116_WT_R1,HCT116_WT_R2,RKO_APC_R1,RKO_APC_R2,RKO_WT_R1,RKO_WT_R2) %>%
+    gather(key = "sample", value = "FC", -sgRNA) %>%
+    separate(sgRNA, into = c("gene", "seq"), sep = "_") %>%
+    separate(sample, into = c("cellline", "mutation", "replicate")) %>%
+    dplyr::mutate(condition = str_c(cellline, mutation, sep = "_")) 
+```
+
+
+# statistics on gsea
+
+```{r}
+enrichment_df <- rbind(cc_df, reactome_df)
+```
+
+```{r}
+heatmap_pathways <- enrichment_df %>%
+  dplyr::filter(Description %in% pathways_interest_dep )%>%
+  drop_na() %>%
+  ggplot(aes(x = contrast, y = Description, fill= enrichmentScore)) +
+  geom_rect(aes(xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf), fill="grey")+
+  geom_tile() + 
+  scale_fill_gradient2(low = phm_low, mid = phm_mid, high = phm_high, midpoint = 0) +
+  ylab("") + xlab("") +
+  scale_x_discrete(limits = c("HCT116", "RKO", "DepMap")) +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=8),
+  plot.title = element_text(size = 8),
+     legend.title = element_text(size = 8),
+       legend.text = element_text(size = 8)
+     ) 
+```
+
+# Plot fold changes RKO vs. APC
+
+```{r}
+
+fc_df <- merge(ResultsTable(hct_rdata),
+      ResultsTable(rko_rdata),
+      by = "Name", suffixes = c("_HCT", "_RKO")) %>%
+  dplyr::filter(Name %in% valid_screen_genes$gene)
+
+plot_screen_lfcs <- function(gene_list, alpha) {
+  
+  fc_df_sel <- fc_df %>% dplyr::filter(Name %in% gene_list)
+  
+  fc_df_highl <- fc_df %>% dplyr::filter(Name %in% gene_list &
+                                           pval_HCT < alpha & pval_RKO < alpha &
+                                           lfc_HCT < 0 & lfc_RKO < 0)
+  
+  fc_df %>%
+    ggplot(aes(x = lfc_HCT, y = lfc_RKO)) +
+    geom_vline(xintercept = 0, color = "grey") + geom_hline(yintercept = 0, color = "grey") +
+    geom_point(color = dp_bg, size = 0.5) +
+    geom_point(data = fc_df_sel, color = dp_mid, size = 0.7 ) +
+    geom_point(data = fc_df_highl, color = dp_high, size = 1) +
+    geom_text_repel(data = fc_df_highl, aes(label = Name),
+                                           color = dp_high,
+                     force = 2, box.padding = 0.15, segment.alpha = 0.3,
+                      size = 2.5,
+                      xlim = c(1,NA)) + 
+     theme_bw() + 
+     xlab(expression(LogFC ~ (HCT116 ~ APC^trunk ~ vs. ~ APC^WT))) + 
+     ylab(expression(LogFC ~ (RKO ~ APC^trunk ~ vs. ~ APC^WT))) +theme(
+  axis.text=element_text(size=7),
+  axis.title=element_text(size=8),
+  plot.title = element_text(size = 8)
+     )
+}
+```
+
+```{r}
+m_df = msigdbr(species = "Homo sapiens", category = "C5")
+targets <- m_df %>%
+    dplyr::filter(gs_name == "GO_MITOCHONDRIAL_MATRIX")
+
+mito_matrix_dots <- plot_screen_lfcs(targets$human_gene_symbol, 0.1) + theme(legend.position = "none")
+```
+Mitochondrial translation
+
+```{r}
+library(reactome.db)
+gene_ids <- clusterProfiler::bitr(fc_df$Name, fromType = "SYMBOL", toType= c("SYMBOL", "ENTREZID"), OrgDb =org.Hs.eg.db) %>%
+    dplyr::filter(!is.na(SYMBOL)) %>% unique()
+
+reactome_list <- as.list(reactomePATHID2EXTID)
+
+sel_genes_trans <- gene_ids %>% dplyr::filter(ENTREZID %in% reactome_list["R-HSA-5368287"][[1]])
+
+mito_trans_dots <- plot_screen_lfcs(sel_genes_trans$SYMBOL, 0.1) + ggtitle("Mitochondrial translation")
+```
+Mitochondrial tRNA aminoacylation
+
+```{r}
+sel_genes_trna <- gene_ids %>% dplyr::filter(ENTREZID %in% reactome_list["R-HSA-379726"][[1]])
+
+mito_trna_dots <- plot_screen_lfcs(sel_genes_trna$SYMBOL, 0.1) + ggtitle("Mitochondrial tRNA aminoacylation")
+```
+# Plot screening results on grna level
+
+```{r}
+#median luciverase
+luci <- sgrna_df %>%
+  dplyr::filter(gene == "luciferase") %>%
+  dplyr::group_by(condition,cellline,mutation) %>%
+  summarise(FC = mean(FC))
+
+poscont <- sgrna_df %>%
+  dplyr::filter(gene == "chr10Promiscuous") %>%
+  dplyr::group_by(condition,cellline,mutation) %>%
+  summarise(FC = mean(FC))
+
+plot_screen_fc <- function(gene_list) {
+  sgrna_df_gene <- sgrna_df %>%
+    dplyr::filter(gene %in% gene_list) %>%
+    group_by(gene, cellline, mutation) %>%
+    dplyr::mutate(ones = 1, sgrnanb = cumsum(ones))
+  
+
+  sgrna_df_gene %>%
+  ggplot(aes(x = sgrnanb, y = log2(FC), color = mutation)) +
+  geom_jitter(width=0.1, size =0.7) +
+  geom_hline(data = luci, aes(yintercept = log2(FC), color = mutation) ) +
+  geom_hline(data = poscont, aes(yintercept = log2(FC), color = mutation), 
+    linetype = "dotted") +
+  facet_grid(gene~cellline, scales = "free") + theme_bw()+
+  scale_x_discrete(labels = as.character(1:6)) +
+  xlab("gRNA ID") + ylab("log2FC (screen T1 vs. library)") +
+  scale_color_manual(name = "",
+    values = c(apc_c, wt_c),
+    labels = c(expression(APC^trunc), expression(APC^WT))) +theme(
+  axis.text=element_text(size=7),
+  axis.title=element_text(size=8),
+  plot.title = element_text(size = 8)
+     )
+}
+```
+
+```{r}
+gene_list <- c("LARS2", "MRPL13", "RARS2")
+
+pos_df <- poscont %>%
+  ungroup() %>%
+  dplyr::select(-condition) %>%
+  pivot_wider(names_from = "mutation", values_from = "FC")
+
+luci_df <- luci %>%
+  ungroup() %>%
+  dplyr::select(-condition) %>%
+  pivot_wider(names_from = "mutation", values_from = "FC")
+
+controls <- rbind(luci_df %>% dplyr::mutate(control = "negative"),
+  pos_df %>% dplyr::mutate(control = "positive"))
+
+sgrna_df_gene <- sgrna_df %>%
+    dplyr::filter(gene %in% gene_list) %>%
+    group_by(gene, cellline, mutation) %>%
+    dplyr::mutate(ones = 1, sgrnanb = cumsum(ones))
+
+fc_grna_plot <- sgrna_df_gene %>%
+  dplyr::select(gene, cellline, mutation, FC, sgrnanb, replicate) %>%
+  pivot_wider(names_from = "mutation", values_from = "FC") %>%
+  ggplot(aes( x = log2(WT), y = log2(APC))) +
+  geom_point(aes( color = replicate), size =0.8) + facet_grid(gene~cellline) +
+  geom_point(data = controls, aes(shape = control), size = 1.5) +
+  geom_abline(linetype = "dashed", size=0.3) + theme_bw() +
+  xlab(expression(sgRNA ~ "in" ~ APC^WT ~ (log2FC))) +
+  ylab(expression(sgRNA ~ "in" ~ APC^trunc ~ (log2FC))) +
+  scale_color_manual(values = c("darkred", apc_c))
+
+
+```
+
+```{r}
+gene_list <- c("MRPS12", "MTIF2", "LARS2")
+grna_dotplots <- plot_screen_fc(gene_list )
+```
+
+# Show Depmap data
+
+```{r}
+depmap_dep <- readRDS("../r_data/depmap_dependency_limma_wntgroup.RData")
+```
+## Waterfall plots
+
+```{r}
+
+plot_depmap_lfcs <- function(gene_list, alpha = 0.1) {
+  
+  fc_df_highl <- fc_df %>% dplyr::filter(Name %in% gene_list &
+                                           pval_HCT < alpha & pval_RKO < alpha &
+                                           lfc_HCT < 0 & lfc_RKO < 0)
+  depmap_dep_sel <- depmap_dep %>%
+    arrange(logFC) %>%
+    dplyr::mutate(ones = 1, rank = cumsum(ones)) %>% dplyr::filter(SYMBOL %in% gene_list)
+  depmap_dep_highl <- depmap_dep_sel %>% dplyr::filter(SYMBOL %in% fc_df_highl$Name)
+  
+  depmap_dep %>%
+    arrange(logFC) %>%
+    dplyr::mutate(ones = 1, rank = cumsum(ones)) %>%
+    ggplot(aes(y = rank, x = logFC)) +
+    geom_vline(xintercept = 0, color = "grey") + geom_hline(yintercept = 0, color = "grey") +
+    geom_point(color = dp_bg, size =0.5) +
+    geom_point(data = depmap_dep_sel, color = dp_mid, size =0.7) +
+    geom_point(data = depmap_dep_highl, color = dp_high, size =1) +
+    geom_text_repel(data = depmap_dep_highl, aes(label = SYMBOL),
+                                           color = dp_high,
+                     force = 2, box.padding = 0.15, segment.alpha = 0.3,
+                      size = 2.5,
+                      xlim = c(-0.75,-0.1)
+      ) + 
+     theme_bw() + 
+     xlab("LogFC (WNT high vs. low)") + ylab("Rank") +   theme(axis.ticks.y = element_blank(),
+                          axis.text.y = element_blank(),
+  axis.text=element_text(size=7),
+  axis.title=element_text(size=8),
+  plot.title = element_text(size = 8))
+}
+```
+
+```{r}
+depmap_mito_trans <- plot_depmap_lfcs(sel_genes_trans$SYMBOL) + ggtitle("Mitochondrial translation")
+```
+```{r}
+depmap_mito_trna <-plot_depmap_lfcs(sel_genes_trna$SYMBOL) + ggtitle("Mitochondrial tRNA aminoacylation")
+```
+
+
+
+# Assemble the figure
+```{r}
+# APC truncation
+# Picture screen setup
+
+sub1 <- plot_grid(mito_trans_dots, mito_trna_dots, nrow=1, labels = c("D", "E"))
+
+col1 <- plot_grid(heatmap_pathways + 
+    ggtitle("Gene set enrichment")+ 
+    theme(plot.title = element_text(size = 12)),
+  sub1, ncol=1, labels = c("A",""), rel_heights = c(1,0.6))
+
+
+col2 <- cowplot::plot_grid(depmap_mito_trans, depmap_mito_trna, fc_grna_plot, labels = c("B", "C", "F"),ncol=1, rel_heights = c(0.8,0.8,1.1))
+
+
+
+
+
+
+fig4 <- plot_grid(col1, col2, nrow = 1, rel_widths = c(1.2, 0.7))
+
+save_plot("assembled_figures/Figure4.pdf", fig4, 
+  base_height = 8,
+          base_width = 9.5)
+
+save_plot("assembled_figures/Figure4.png", fig4 , 
+  base_height = 8,
+          base_width = 9.5)
+```
+

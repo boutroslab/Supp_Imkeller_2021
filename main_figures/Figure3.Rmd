@@ -1,0 +1,421 @@
+---
+title: "APC screen analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+source("../differential_analysis/definitions_analysis_visualization.R")
+```
+
+# Define gene sets of interest
+
+Expression data needs to be looked at on CTNNB1 target gene expression
+```{r}
+m_df = msigdbr(species = "Homo sapiens", category = "H")
+ctnnb1_targets <- m_df %>%
+    dplyr::filter(gs_name == "HALLMARK_WNT_BETA_CATENIN_SIGNALING")
+```
+
+CRISPR data: look at the genes involved in the pathway (regulation etc)
+```{r}
+m_df = msigdbr(species = "Homo sapiens", category = "C2")
+wnt_genes <- m_df %>% #dplyr::filter(grepl("WNT", gs_name))
+    dplyr::filter(gs_name == "WNT_SIGNALING")
+```
+
+# Read in datasets
+
+### CRISPR screen data
+
+gscreend output APCtrunc vs. APCwt
+```{r}
+rko_rdata <- readRDS('../r_data/RKO_WT_vs_APC.RData')
+
+hct_rdata <- readRDS('../r_data/HCT_WT_vs_APC.RData')
+```
+
+```{r}
+complete_table  <- read_csv("../external_data/CRISPR_screen_gRNA_counts.csv") 
+```
+Normalize
+
+```{r}
+complete_table <- complete_table %>%
+    # calculate normalized mean
+    dplyr::mutate(library_sn = plasmid_library_R1) %>%
+    dplyr::mutate_at(.funs = funs(sn = ./sum(.) * sum(plasmid_library_R1)), .vars = 5:12)
+```
+
+
+```{r}
+sgrna_df <- complete_table %>%
+    dplyr::mutate(HCT116_APC_R1 = HCT116_APC_T17_R1_sn/library_sn,
+                  HCT116_APC_R2 = HCT116_APC_T17_R2_sn/library_sn,
+                  HCT116_WT_R1 = HCT116_WT_T14_R1_sn/library_sn,
+                  HCT116_WT_R2 = HCT116_WT_T14_R2_sn/library_sn,
+                  RKO_APC_R1 = RKO_APC_T20_R1_sn/library_sn,
+                  RKO_APC_R2 = RKO_APC_T20_R2_sn/library_sn,
+                  RKO_WT_R1 = RKO_WT_T20_R1_sn/library_sn,
+                  RKO_WT_R2 = RKO_WT_T20_R2_sn/library_sn) %>%
+    dplyr::select(sgRNA, HCT116_APC_R1,HCT116_APC_R2,HCT116_WT_R1,HCT116_WT_R2,RKO_APC_R1,RKO_APC_R2,RKO_WT_R1,RKO_WT_R2) %>%
+    gather(key = "sample", value = "FC", -sgRNA) %>%
+    separate(sgRNA, into = c("gene", "seq"), sep = "_") %>%
+    separate(sample, into = c("cellline", "mutation", "replicate")) %>%
+    dplyr::mutate(condition = str_c(cellline, mutation, sep = "_")) 
+
+unique(sgrna_df$gene)[grepl("ch",unique(sgrna_df$gene))]
+```
+
+### DepMap CRISPR screen data
+```{r}
+depmap_df <- readRDS("../r_data/depmap_rna_prot_crispr.RData")
+metadata_df <- readRDS("../r_data/depmap_metadata.RData")
+```
+
+AXIN2 and CTNNB1 expression
+
+```{r}
+axin2 <- depmap_df %>% dplyr::filter(gene_name == "AXIN2") %>% dplyr::select(depmap_id, gene_name, rna_expression) %>% unique()
+```
+
+Separate into Wnt high and Wnt low
+```{r}
+wnt_groups <- axin2 %>%
+  dplyr::mutate(wnt_group = ifelse(rna_expression < depmap_axin2_threshold, "low", "high"))
+```
+
+# Dependency data: The APC trunc engineered cell lines do not look like they now depend on Wnt signaling
+
+## Look at dependency of WNT signaling components: Pathway enrichment
+
+Use pathway enrichment analysis to show that Wnt signaling is not enriched here
+
+```{r}
+hs_C2_PW <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP") %>% 
+    dplyr::filter(gs_name == "WNT_SIGNALING")
+
+performmsigdbGSEA <- function(res, alpha=0.05) {
+  symbols <- clusterProfiler::bitr(rownames(res), fromType = "SYMBOL", toType= "ENTREZID", OrgDb =org.Hs.eg.db) 
+
+  df <- left_join(as.data.frame(res) %>%
+  rownames_to_column("SYMBOL"),
+  symbols, by = "SYMBOL")
+  
+  # generate a sorted list according to stat
+  df <- df %>% dplyr::filter(!is.na(ENTREZID))
+  sortlist <- df$lfc
+  names(sortlist) <- df$ENTREZID
+
+  t2g <- hs_C2_PW %>% dplyr::select(gs_name, entrez_gene)
+  
+  set.seed(42)
+  y <- GSEA(sort(sortlist, decreasing = TRUE), 
+                     TERM2GENE= t2g, verbose=FALSE,  
+                     pvalueCutoff = alpha)
+  as.data.frame(y)
+}
+
+
+hallmark_df <- rbind(performmsigdbGSEA(ResultsTable(hct_rdata), alpha=0.9) %>% dplyr::mutate(contrast = "HCT116"),
+performmsigdbGSEA(ResultsTable(rko_rdata), alpha=0.7) %>% dplyr::mutate(contrast = "RKO"))
+# Wnr signaling CP is not enriched in either RKO or HCT116 APCtrunc vs. wt screen
+
+```
+
+
+## DepMapdata: model the dependencies between APC and not APC groups
+
+Set up matrix
+```{r}
+df <- depmap_df %>%
+  dplyr::select(depmap_id, gene_name, dependency) %>%
+  unique() %>%
+  pivot_wider(names_from = depmap_id, values_from = dependency)
+
+count_matrix <- as.matrix(df[,-1])
+```
+
+
+```{r}
+wnt_list <- wnt_groups$wnt_group
+names(wnt_list) <- wnt_groups$depmap_id
+
+design<-model.matrix(~wnt_list)
+
+rownames(count_matrix) <- df$gene_name
+
+fit<-lmFit(count_matrix, design)
+fit<-eBayes(fit)
+
+res <- topTable(fit,coef=2, number=Inf)   %>%
+  rownames_to_column("gene_name")
+```
+
+```{r}
+symbols <- clusterProfiler::bitr(res$gene_name, fromType = "SYMBOL", toType= "ENTREZID", OrgDb =org.Hs.eg.db) 
+df <- left_join(res %>%
+  dplyr::rename(SYMBOL = gene_name),
+  symbols, by = "SYMBOL")
+  
+  # generate a sorted list according to stat
+  df <- df %>% dplyr::filter(!is.na(ENTREZID))
+  sortlist <- df$logFC
+  names(sortlist) <- df$ENTREZID
+
+  t2g <- hs_C2_PW %>% dplyr::select(gs_name, entrez_gene)
+  
+  set.seed(42)
+  y <- GSEA(sort(sortlist, decreasing = TRUE), 
+                     TERM2GENE= t2g, verbose=FALSE,  
+                     pvalueCutoff = 0.4)
+  as.data.frame(y)
+```
+
+CONCLUSION:
+enrichment for Wnt pathway does work! 
+
+```{r}
+label_gene_list <- c("CTNNB1", #"MYC",
+  "GSK3A", "GSK3B", "CCND2")
+
+apc_wt_df <- res %>%
+  arrange(-logFC) %>%
+  dplyr::mutate(ones = 1, Rank = cumsum(ones)) %>%
+  dplyr::mutate(wnt_element = ifelse(gene_name %in% wnt_genes$human_gene_symbol, 1, 0)) %>%
+  dplyr::mutate(enrichment_score = cumsum(wnt_element))
+
+highl_df <-  apc_wt_df %>%
+  dplyr::filter(gene_name %in% wnt_genes$human_gene_symbol)
+
+label_df <-  apc_wt_df %>%
+  dplyr::filter(gene_name %in% label_gene_list)
+
+set.seed(42)
+depmap_apc_wt_rank <- apc_wt_df %>%
+      ggplot(aes(y = Rank, x = -logFC)) +
+      geom_vline(xintercept = 0, color = "grey") +
+      geom_point(color = dp_bg, size =0.5) +
+      geom_point(data = highl_df, size = 0.7, color = dp_mid) +
+      geom_point(data = label_df, size = 0.7, color = dp_high) +
+      geom_text_repel(data = label_df, aes(label = gene_name),
+                      force = 100, box.padding = 0.25, 
+                      ylim = c(2000,15000),  xlim = c(-0.8,0),
+                      color = dp_high, size =3) +
+     theme_bw() +   theme(axis.ticks.y = element_blank(),
+                          axis.text.y = element_blank()) +
+     xlab("Differential dependence\n(WNT high vs. low)")+ 
+  theme(legend.position = "none") + ggtitle("DepMap colorectal\n(GSEA, p = 0.04)") +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+
+
+## Look at dependency of WNT signaling components: Plot individual components
+
+
+```{r}
+plot_screen_ranks <- function(df, gene_list) {
+  plot_df <- merge(ResultsTable(df, direction = "negative"),
+                       ResultsTable(df, direction = "positive"),
+                       by = "Name", suffixes = c("_neg", "_pos")) %>%
+    arrange(lfc_neg) %>%
+    dplyr::mutate(ones = 1, Rank = cumsum(ones))
+  
+  highl_df <- plot_df %>% dplyr::filter(Name %in% gene_list)
+
+  label_df <-  plot_df  %>%
+      dplyr::filter(Name %in% label_gene_list)
+
+  
+   plot_df %>%
+      ggplot(aes(y = Rank, x = lfc_neg)) +
+      geom_vline(xintercept = 0, color = "grey") +
+      geom_point(color = dp_bg, size =0.5) +
+      geom_point(data = highl_df, size = 0.7, color = dp_mid) +
+      geom_point(data = label_df, size = 0.7, color = dp_high) +
+      geom_text_repel(data = label_df, aes(label = Name),
+                      force = 2, box.padding = 0.15, segment.alpha = 0.3,
+                      size = 3,
+                      xlim = c(-3,-1), color = dp_high) +
+     theme_bw() +   theme(axis.ticks.y = element_blank(),
+                          axis.text.y = element_blank()) +
+     xlab(expression(APC^trunk ~ vs. ~ APC^WT)) +
+  theme(legend.position = "none") +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+}
+
+set.seed(42)
+hct_wnt_rank <- plot_screen_ranks(hct_rdata, wnt_genes$human_gene_symbol) + 
+  theme(legend.position = "none") + ggtitle("HCT116 CRISPR-screen\n(no enrichment, p = 0.46)")
+```
+```{r}
+set.seed(42)
+rko_wnt_rank <- plot_screen_ranks(rko_rdata, wnt_genes$human_gene_symbol) +
+  theme(legend.position = "none") + ggtitle("RKO CRISPR-screen\n(no enrichment, p = 0.41)")
+```
+
+Screen on grna level
+
+```{r}
+#median luciverase
+luci <- sgrna_df %>%
+  dplyr::filter(gene == "luciferase") %>%
+  dplyr::group_by(condition,cellline,mutation) %>%
+  summarise(FC = mean(FC))
+
+poscont <- sgrna_df %>%
+  dplyr::filter(gene == "chr10Promiscuous") %>%
+  dplyr::group_by(condition,cellline,mutation) %>%
+  summarise(FC = mean(FC))
+
+sgrna_plot <- sgrna_df %>%
+  dplyr::filter(gene == "CTNNB1") %>%
+  ggplot(aes(x = seq, y = log2(FC), color = mutation)) +
+  geom_jitter(width=0.1, size =0.7) +
+  geom_hline(data = luci, aes(yintercept = log2(FC), color = mutation) ) +
+  geom_hline(data = poscont, aes(yintercept = log2(FC), color = mutation), linetype = "dotted") +
+  facet_wrap(~cellline, ncol = 1) + theme_bw() +
+  scale_x_discrete(labels = as.character(1:6)) +
+  xlab("gRNA ID") + ylab("log2FC (T1 vs. plasmid)") +
+  scale_color_manual(name = "", values = c(apc_c, wt_c),
+    labels = c(expression(APC^trunc), expression(APC^WT))) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  ) 
+
+
+```
+
+```{r}
+gene_list <- c("CTNNB1")
+
+pos_df <- poscont %>%
+  ungroup() %>%
+  dplyr::select(-condition) %>%
+  pivot_wider(names_from = "mutation", values_from = "FC")
+
+luci_df <- luci %>%
+  ungroup() %>%
+  dplyr::select(-condition) %>%
+  pivot_wider(names_from = "mutation", values_from = "FC")
+
+controls <- rbind(luci_df %>% dplyr::mutate(control = "negative"),
+  pos_df %>% dplyr::mutate(control = "positive"))
+
+sgrna_df_gene <- sgrna_df %>%
+    dplyr::filter(gene %in% gene_list) %>%
+    group_by(gene, cellline, mutation) %>%
+    dplyr::mutate(ones = 1, sgrnanb = cumsum(ones))
+
+fc_grna_plot <- sgrna_df_gene %>%
+  dplyr::select(gene, cellline, mutation, FC, sgrnanb, replicate) %>%
+  pivot_wider(names_from = "mutation", values_from = "FC") %>%
+  ggplot(aes( x = log2(WT), y = log2(APC))) +
+  geom_point(aes( color = replicate), size =0.8) + facet_grid(gene~cellline) +
+  geom_point(data = controls, aes(shape = control), size = 1.5) +
+  geom_abline(linetype = "dashed", size=0.3) + theme_bw() +
+  xlab(expression(sgRNA ~ "in" ~ APC^WT ~ (log2FC))) +
+  ylab(expression(sgRNA ~ "in" ~ APC^trunc ~ (log2FC))) +
+  scale_color_manual(values = c("darkred", apc_c)) +
+ scale_x_continuous(breaks = c(-1, 0, 1)) + 
+  scale_y_continuous(breaks = c(-1, 0, 0.5)) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10),
+    legend.position = "top",
+    legend.box="vertical", legend.margin=margin()
+  )
+
+
+```
+
+
+
+
+```{r}
+ctnnb1 <- depmap_df %>% dplyr::filter(gene_name == "CTNNB1") %>% dplyr::select(depmap_id, gene_name, protein_expression, dependency) %>% unique()
+```
+
+```{r}
+hct116 <- metadata_df %>% dplyr::filter(stripped_cell_line_name.x == "HCT116")
+rko <- metadata_df %>% dplyr::filter(stripped_cell_line_name.x == "RKO")
+```
+
+
+```{r}
+wnt_ctnnb1 <- left_join(axin2, ctnnb1, by = "depmap_id", suffix = c(".axin2", ".ctnnb1")) %>%
+  # annotate HCT 116 and RKO
+  dplyr::mutate(label = ifelse(depmap_id %in% hct116, "HCT116",
+                               ifelse(depmap_id %in% rko, "RKO", NA))) %>%
+  dplyr::mutate(wnt_group = ifelse(rna_expression < 4.5, "low", "high")) %>%
+  ggplot(aes(y = dependency, x = rna_expression)) +
+  geom_point(aes(color = wnt_group), size = 0.7) + 
+    geom_text_repel(aes(label = label), xlim = c(1.5,3)) +
+  theme_bw() + #theme(legend.position = c(0.2,0.2)) +
+  scale_color_manual(name = "WNT", values = c(wntl_c, wnth_c)) +
+  xlab(expression(italic("AXIN2") ~ expression)) + ylab("Dependence\non CTNNB1") +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+
+
+# Assemble the figure
+```{r}
+# Picture screen setup
+scheme <- cowplot::ggdraw() + cowplot::draw_image("intermediate_graphics/crispr_screen.png",
+                                                  clip="on"
+  )
+
+col1 <- plot_grid(scheme, labels = c("A"))
+col2 <- plot_grid(depmap_apc_wt_rank, wnt_ctnnb1, labels = c("B", "C"), 
+  ncol = 1, rel_heights = c(1,0.8))
+row1 <- plot_grid(col1, col2, nrow =1, rel_widths = c(1,0.7))
+
+row2 <- plot_grid(hct_wnt_rank, rko_wnt_rank, fc_grna_plot , 
+  labels = c("D", "E", "F"), nrow = 1, rel_widths = c(1,1,1.5))
+
+fig3 <- plot_grid(row1, row2 , rel_heights = c(1,0.65), ncol = 1)
+
+
+save_plot("assembled_figures/Figure3.pdf", fig3, base_height = 6.5,
+         base_width = 6.5)
+
+save_plot("assembled_figures/Figure3.png", fig3, base_height = 6.5,
+          base_width = 6.5)
+```
+

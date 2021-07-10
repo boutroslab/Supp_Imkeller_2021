@@ -1,0 +1,77 @@
+---
+title: "Prepare DepMap data"
+author: Katharina Imkeller
+date: 01. June 2021
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(depmap)
+library(readr)
+```
+
+# Import data
+
+```{r, message=FALSE}
+TPM <- depmap_TPM()
+metadata <- depmap_metadata()
+mutationCalls <- mutationCalls_19Q3()
+crispr <- depmap_crispr()
+proteomic <- depmap_proteomic()
+```
+
+```{r}
+colon_metadata <- metadata %>%
+  dplyr::filter(primary_disease == "Colon/Colorectal Cancer" & sample_collection_site %in% c("Colon", "large_intestine")) 
+```
+
+We use previously collected MSI annotation data from Zhan et al. 2021 (https://doi.org/10.1002/ijc.33393).
+```{r, message = FALSE}
+msi_info <- read_csv("../external_data/depmap_msi_status.txt.gz")
+```
+
+```{r}
+metadata_df  <- left_join(colon_metadata, msi_info, by = "depmap_id")
+```
+
+
+```{r}
+colon_mutations <- mutationCalls %>%
+  dplyr::filter(depmap_id %in% colon_metadata$depmap_id)
+```
+```{r}
+colon_TPM <- TPM %>%
+  dplyr::filter(depmap_id %in% colon_metadata$depmap_id)
+```
+```{r}
+colon_crispr <- crispr %>%
+  dplyr::filter(depmap_id %in% colon_metadata$depmap_id)
+```
+```{r}
+colon_proteomic <- proteomic %>%
+  dplyr::filter(depmap_id %in% colon_metadata$depmap_id) %>%
+# take the mean over multiple runs
+  group_by(depmap_id, gene_name) %>%
+  summarize(protein_expression = mean(protein_expression, na.rm = TRUE))
+
+```
+
+```{r}
+depmap_df <- left_join(left_join(colon_TPM , colon_crispr, 
+          by = c("depmap_id", "gene", "gene_name", "cell_line", "entrez_id")),
+          colon_proteomic, 
+          by = c("depmap_id", "gene_name")) %>%
+  dplyr::select(depmap_id, entrez_id, gene_name, cell_line, rna_expression, protein_expression, dependency)
+```
+```{r}
+saveRDS(depmap_df, "../r_data/depmap_rna_prot_crispr.RData")
+saveRDS(metadata_df, "../r_data/depmap_metadata.RData")
+saveRDS(colon_mutations, "../r_data/depmap_mutations.RData")
+```
+
+# Session info + package versions
+```{r}
+sessionInfo()
+```
+

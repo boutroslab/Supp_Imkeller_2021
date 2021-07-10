@@ -1,0 +1,221 @@
+---
+title: "GSEA - Transcriptomic and proteomic"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("gsea_functions.R")
+source("definitions_analysis_visualization.R")
+library(enrichplot)
+```
+
+# TCGA
+
+## Import differential dependency data
+
+```{r}
+high_low <- readRDS( "../r_data/DESeq2_res_high_low.RData")
+high_norm <- readRDS("../r_data/DESeq2_res_high_norm.RData")
+low_norm <- readRDS("../r_data/DESeq2_res_low_norm.RData")
+tcga_prot_res <- readRDS("../r_data/tcga_prot_res_high_low.RData")
+```
+
+## Gene set enrichment analysis on Reactome annotation
+
+```{r}
+high_low_react_res <- performreactGSEA(high_low, stat=TRUE)
+high_norm_react_res <- performreactGSEA(high_norm, stat=TRUE)
+low_norm_react_res <- performreactGSEA(low_norm, stat=TRUE)
+tcga_prot_react_res <- performreactGSEA(tcga_prot_res, t=TRUE)
+```
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+pdf(file="../supplementary_material/FigS4A.pdf", width = 25, height = 20)
+set.seed(3)
+ReactomePA::emapplot(pairwise_termsim(high_low_react_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE) + 
+    theme(plot.title = element_text(size = 24, face = "bold"))
+dev.off()
+```
+
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+pdf(file="../supplementary_material/FigS4B.pdf", width = 25, height = 20)
+set.seed(4)
+ReactomePA::emapplot(pairwise_termsim(tcga_prot_react_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE)+ 
+    theme(plot.title = element_text(size = 24, face = "bold"))
+dev.off()
+```
+
+
+```{r}
+tcga_reactome <- rbind(as.data.frame(high_low_react_res) %>% dplyr::mutate(contrast = "high_low", evidence = "RNA"),
+                       as.data.frame(high_norm_react_res) %>% dplyr::mutate(contrast = "high_norm", evidence = "RNA"),
+                       as.data.frame(low_norm_react_res) %>% dplyr::mutate(contrast = "low_norm", evidence = "RNA"),
+                       as.data.frame(tcga_prot_react_res) %>% dplyr::mutate(contrast = "high_low", evidence = "protein"))
+                       
+```
+
+```{r}
+high_low_cc_res <- performmsigdbGSEA(high_low, type="CC", stat=TRUE)
+high_norm_cc_res <- performmsigdbGSEA(high_norm, type="CC", stat=TRUE)
+low_norm_cc_res <- performmsigdbGSEA(low_norm, type="CC", stat=TRUE)
+tcga_prot_cc_res <- performmsigdbGSEA(tcga_prot_res, type="CC", t=TRUE)
+```
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+pdf(file="../supplementary_material/FigS4C.pdf", width = 15, height = 15)
+set.seed(4)
+ReactomePA::emapplot(pairwise_termsim(high_low_cc_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE) +
+    theme(plot.title = element_text(size = 20, face = "bold"))
+dev.off()
+```
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+pdf(file="../supplementary_material/FigS4D.pdf", width = 25, height = 20)
+set.seed(4)
+ReactomePA::emapplot(pairwise_termsim(tcga_prot_cc_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE) +
+    theme(plot.title = element_text(size = 24, face = "bold"))
+dev.off()
+```
+
+
+```{r}
+tcga_cc <- rbind(as.data.frame(high_low_cc_res) %>% dplyr::mutate(contrast = "high_low", evidence = "RNA"),
+                       as.data.frame(high_norm_cc_res) %>% dplyr::mutate(contrast = "high_norm", evidence = "RNA"),
+                       as.data.frame(low_norm_cc_res) %>% dplyr::mutate(contrast = "low_norm", evidence = "RNA"),
+                       as.data.frame(tcga_prot_cc_res) %>% dplyr::mutate(contrast = "high_low", evidence = "protein"))
+```
+
+```{r}
+high_low_k_res <- performKEGGGSEA(high_low, stat=TRUE, alpha =0.1)
+high_norm_k_res <- performKEGGGSEA(high_norm, stat=TRUE, alpha =0.1)
+low_norm_k_res <- performKEGGGSEA(low_norm, stat=TRUE, alpha =0.1)
+tcga_prot_k_res <- performKEGGGSEA(tcga_prot_res, t=TRUE, alpha =0.1)
+```
+
+```{r, fig.width=7, fig.height=7, error = TRUE, warning=FALSE, message=FALSE}
+ReactomePA::emapplot(pairwise_termsim(tcga_prot_k_res), 
+  showCategory = 200, color = "enrichmentScore") +
+  scale_color_gradient2(low = phm_low, mid = phm_mid, high = phm_high, midpoint = 0)
+```
+
+```{r}
+tcga_kegg <- rbind(as.data.frame(high_low_k_res) %>% dplyr::mutate(contrast = "high_low", evidence = "RNA"),
+                       as.data.frame(high_norm_k_res) %>% dplyr::mutate(contrast = "high_norm", evidence = "RNA"),
+                       as.data.frame(low_norm_k_res) %>% dplyr::mutate(contrast = "low_norm", evidence = "RNA"),
+                       as.data.frame(tcga_prot_k_res) %>% dplyr::mutate(contrast = "high_low", evidence = "protein"))
+```
+
+
+```{r}
+saveRDS(tcga_reactome, "../r_data/tcga_trans_gsea_reactome.RData")
+saveRDS(tcga_cc, "../r_data/tcga_trans_gsea_cc.RData")
+saveRDS(tcga_kegg, "../r_data/tcga_trans_gsea_kegg.RData")
+```
+
+### Depmap transcriptomics
+
+```{r}
+depmap_trans <- readRDS("../r_data/depmap_transcriptomics_limma_wntgroup.RData")
+depmap_prot <- readRDS("../r_data/depmap_proteomics_limma_wntgroup.RData")
+```
+
+```{r}
+depmap_t_react_res <- performreactGSEA(depmap_trans, t = TRUE)
+depmap_p_react_res <- performreactGSEA(depmap_prot, t = TRUE)
+```
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+pdf(file="../supplementary_material/FigS4E.pdf", width = 25, height = 20)
+set.seed(4)
+ReactomePA::emapplot(pairwise_termsim(depmap_t_react_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE) + 
+    theme(plot.title = element_text(size = 24, face = "bold"))
+dev.off()
+```
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+pdf(file="../supplementary_material/FigS4F.pdf", width = 25, height = 20)
+set.seed(4)
+ReactomePA::emapplot(pairwise_termsim(depmap_p_react_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE) + 
+    theme(plot.title = element_text(size = 24, face = "bold"))
+dev.off()
+```
+
+
+```{r}
+depmap_reactome <- rbind(as.data.frame(depmap_t_react_res ) %>% dplyr::mutate(evidence = "RNA"),
+                    as.data.frame(depmap_p_react_res ) %>% dplyr::mutate(evidence = "protein"))
+```
+
+```{r}
+depmap_t_cc_res <- performmsigdbGSEA(depmap_trans, type="CC", t = TRUE)
+depmap_p_cc_res  <- performmsigdbGSEA(depmap_prot, type="CC", t = TRUE)
+```
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+pdf(file="../supplementary_material/FigS4G.pdf", width = 15, height = 15)
+set.seed(4)
+ReactomePA::emapplot(pairwise_termsim(depmap_t_cc_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE) + 
+    theme(plot.title = element_text(size = 20, face = "bold"))
+dev.off()
+```
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+pdf(file="../supplementary_material/FigS4H.pdf", width = 20, height = 20)
+set.seed(4)
+ReactomePA::emapplot(pairwise_termsim(depmap_p_cc_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE) + 
+    theme(plot.title = element_text(size = 24, face = "bold"))
+dev.off()
+```
+
+
+```{r}
+depmap_cc <- rbind(as.data.frame(depmap_t_cc_res) %>% dplyr::mutate(evidence = "RNA"),
+                   as.data.frame(depmap_p_cc_res) %>% dplyr::mutate(evidence = "protein"))
+```
+
+
+```{r}
+depmap_t_k_res <- performKEGGGSEA(depmap_trans, t = TRUE, alpha = 0.1)
+depmap_p_k_res  <- performKEGGGSEA(depmap_prot, t = TRUE, alpha = 0.1)
+```
+
+```{r, fig.width=10, fig.height=10, error = TRUE, warning=FALSE, message=FALSE}
+ReactomePA::emapplot(pairwise_termsim(depmap_t_k_res), 
+  showCategory = 200, color = "enrichmentScore") +
+  scale_color_gradient2(low = phm_low, mid = phm_mid, high = phm_high, midpoint = 0)
+```
+
+```{r, fig.width=10, fig.height=10, error = TRUE, warning=FALSE, message=FALSE}
+ReactomePA::emapplot(pairwise_termsim(depmap_p_k_res), 
+  showCategory = 200, color = "enrichmentScore") +
+  scale_color_gradient2(low = phm_low, mid = phm_mid, high = phm_high, midpoint = 0)
+```
+
+```{r}
+depmap_kegg <- rbind(as.data.frame(depmap_t_k_res) %>% dplyr::mutate(evidence = "RNA"),
+             as.data.frame(depmap_p_k_res) %>% dplyr::mutate(evidence = "protein"))
+```
+
+
+
+```{r}
+saveRDS(depmap_reactome, "../r_data/depmap_trans_prot_gsea_reactome.RData")
+saveRDS(depmap_cc, "../r_data/depmap_trans_prot_gsea_cc.RData")
+saveRDS(depmap_kegg, "../r_data/depmap_trans_prot_gsea_kegg.RData")
+```

@@ -1,0 +1,408 @@
+---
+title: "cell_line_classification"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("../differential_analysis/definitions_analysis_visualization.R")
+```
+
+# Load DepMap data
+
+```{r}
+depmap_df <- readRDS("../r_data/depmap_rna_prot_crispr.RData")
+metadata_df <- readRDS("../r_data/depmap_metadata.RData")
+colon_mutations <- readRDS("../r_data/depmap_mutations.RData")
+```
+
+CMS classification
+```{r}
+cl_cms <- read_csv("../external_data/zhan_cms.csv.gz", skip = 3)
+
+cl_cms <- left_join(metadata_df, cl_cms %>% dplyr::rename(cell_line_name = `Cell line`), by = "cell_line_name") %>%
+  dplyr::mutate(cms_status = ifelse(`Consensus CMS primary` %in% c("CMS1", "CMS2", "CMS3", "CMS4"), `Consensus CMS primary`, "unknown"))
+```
+
+
+Heatmap
+
+```{r}
+m_df = msigdbr(species = "Homo sapiens", category = "H")
+ctnnb1_targets <- m_df %>%
+        dplyr::filter(gs_name == "HALLMARK_WNT_BETA_CATENIN_SIGNALING")
+
+ctnnb1_targets$ENSEMBL <- mapIds(org.Hs.eg.db,keys=as.character(ctnnb1_targets$human_gene_symbol),
+                     column="ENSEMBL", keytype="SYMBOL", multiVals="first")
+
+count_mat <- depmap_df %>% dplyr::select(depmap_id, gene_name, rna_expression) %>%
+  pivot_wider(names_from = depmap_id, values_from = rna_expression)
+```
+
+
+
+
+AXIN2 and CTNNB1 expression
+
+```{r}
+axin2 <- depmap_df %>% dplyr::filter(gene_name == "AXIN2") %>% 
+  dplyr::select(depmap_id, gene_name, rna_expression) %>% unique()
+ctnnb1 <- depmap_df %>% dplyr::filter(gene_name == "CTNNB1") %>% 
+  dplyr::select(depmap_id, gene_name, protein_expression, dependency) %>% unique()
+nkd1 <- depmap_df %>% dplyr::filter(gene_name == "NKD1") %>% 
+  dplyr::select(depmap_id, gene_name, rna_expression) %>% unique()
+```
+
+Separate into Wnt high and Wnt low
+```{r}
+wnt_groups <- left_join(axin2, ctnnb1, by = "depmap_id", suffix = c(".axin2", ".ctnnb1")) %>%
+  dplyr::mutate(WNT = ifelse(rna_expression < depmap_axin2_threshold, "low", "high"))
+```
+
+```{r}
+axin2_exp_plot <- left_join(wnt_groups, cl_cms, by = "depmap_id") %>%
+  dplyr::mutate(label = ifelse(stripped_cell_line_name.x %in% c("HCT116", "RKO"), stripped_cell_line_name.x, NA)) %>%
+  arrange(rna_expression) %>%
+  dplyr::mutate(ones = 1, rank = cumsum(ones)) %>%
+  ggplot() +
+  geom_point(aes(x = rank, y = rna_expression, color = cms_status)) +
+  #geom_point(aes (color = wnt_group)) +
+  ggrepel::geom_label_repel(aes(x = rank, y = rna_expression, label = label), xlim = c(10,30)) +
+  geom_hline(yintercept = 4.5) +
+  # label above and below line
+  ggplot2::geom_text(aes(x = 40, y = 5, label = "Wnt-high"), data.frame()) +
+  ggplot2::geom_text(aes(x = 40, y = 3.9, label = "Wnt-low"), data.frame()) +
+  scale_color_manual(name = "CMS", values = c(cms1_c,cms2_c,cms4_c,gr2)) +
+  theme_bw() +
+  xlab(expression(Rank ~ according ~ italic(AXIN2) ~ expression)) +
+   ylab(expression(italic(AXIN2) ~ expression)) +
+  ggtitle("Colorectal cancer cell lines") +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+```{r}
+mutation_CL <- unique(colon_mutations$depmap_id)
+
+braf_mut <- colon_mutations %>%
+  dplyr::filter(gene_name == "BRAF") %>%
+  dplyr::filter(var_class == "Missense_Mutation") %>%
+  dplyr::mutate(v600 = ifelse(grepl("p.V600", protein_change), TRUE, FALSE)) %>%
+  group_by(depmap_id) %>% dplyr::summarize(v600 = any(v600)) %>%
+  dplyr::mutate(mutation_type = ifelse(v600, "p.V600", "other\nmissense"))
+
+kras_mut <- colon_mutations %>%
+  dplyr::filter(gene_name == "KRAS") %>%
+  dplyr::filter(var_class == "Missense_Mutation") %>%
+  dplyr::mutate(g1213 = ifelse(grepl("p.G13|p.G12", protein_change), TRUE, FALSE)) %>%
+  group_by(depmap_id) %>% dplyr::summarize(g1213 = any(g1213)) %>%
+  dplyr::mutate(mutation_type = ifelse(g1213, "G12|G13", "other\nmissense"))
+
+apc_mut <- colon_mutations %>%
+  dplyr::filter(gene_name == "APC") %>%
+  dplyr::filter(var_class %in% c("Nonsense_Mutation", "Frame_Shift_Ins", "Frame_Shift_Del")) %>%
+  group_by(depmap_id) %>% dplyr::summarize(mutation_count = n()) %>%
+  # more than 2 -> 2
+  dplyr::mutate(mutation_count = ifelse(mutation_count >= 2, ">=2", as.character(mutation_count)))
+
+rnf43_mut <- colon_mutations %>%
+  dplyr::filter(gene_name == "RNF43") %>%
+  dplyr::filter(var_class %in% c("Missense_Mutation","Nonsense_Mutation", "Frame_Shift_Ins", "Frame_Shift_Del")) %>%
+  dplyr::mutate(mutation_type = ifelse(protein_change == "p.G659fs", "G659Vfs*41", 
+    ifelse(var_class == "Missense_Mutation", "missense", "other\ntruncating"))) %>%
+  group_by(depmap_id, mutation_type) %>% dplyr::summarize() 
+```
+
+```{r}
+apc_int_df <- left_join(wnt_groups, apc_mut, by = "depmap_id") %>% 
+  dplyr::filter(depmap_id %in% mutation_CL) %>%
+  dplyr::mutate(mutation_count = ifelse(is.na(mutation_count) , 0, mutation_count)) %>%
+  group_by(WNT, mutation_count) %>%
+  dplyr::summarize(n_counts = n())
+
+apc_int_df$mutation_count <- factor(apc_int_df$mutation_count,levels = c("0","1",">=2"))
+
+apc_plot <- apc_int_df %>%
+  ggplot(aes(x = WNT, y = n_counts, fill = mutation_count)) +
+  geom_bar(position = "fill",stat = "identity") +
+  scale_fill_manual(name="truncation\ncount", values = c(gr3,gr2,gr1)) +
+  scale_y_continuous(breaks = c(0,0.5,1)) +
+  ylab("Relative frequency") +
+  scale_x_discrete(limits = c("low", "high"))+
+  ggtitle("APC truncations") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+  
+```
+
+```{r}
+
+kras_df <- left_join(wnt_groups, kras_mut, by = "depmap_id") %>% 
+    dplyr::filter(depmap_id %in% mutation_CL) %>%
+  dplyr::mutate(mutation_type = ifelse(is.na(mutation_type) , "none", mutation_type)) %>%
+  group_by(WNT, mutation_type) %>%
+  dplyr::summarize(n_counts = n())
+
+kras_df$mutation_type <- factor(kras_df$mutation_type, levels = c("none","other\nmissense","G12|G13" ))
+
+kras_plot <- kras_df %>%
+  ggplot(aes(x = WNT, y = n_counts, fill = mutation_type)) +
+  geom_bar(position = "fill",stat = "identity") +
+    scale_fill_manual(name = "",values = c(gr3, gr1,dist_c)) +
+  scale_x_discrete(limits = c("low", "high"))+
+  scale_y_continuous(breaks = c(0,0.5,1)) +
+  ylab("Relative frequency") +
+  ggtitle("KRAS mutations") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+```{r}
+rnf43_int_df <- left_join(wnt_groups, rnf43_mut, by = "depmap_id") %>%
+  dplyr::filter(depmap_id %in% mutation_CL) %>%
+  dplyr::mutate(mutation_type = ifelse(is.na(mutation_type) , "none", mutation_type)) %>%
+  group_by(WNT, mutation_type) %>%
+  dplyr::summarize(n_counts = n())
+
+rnf43_int_df$mutation_type <- factor(rnf43_int_df$mutation_type, levels = c("none","missense","G659Vfs*41","other\ntruncating"))
+
+rnf_sum <- rnf43_int_df %>%
+ # I checked that there are not 2 mutations in 1 sample
+  ggplot(aes(x = WNT, y = n_counts, fill = mutation_type)) +
+  geom_bar(position = "fill",stat = "identity") +
+    scale_fill_manual(name = "", values = c(gr3, gr2, dist_c, gr1)) +
+  scale_x_discrete(limits = c("low", "high")) +
+  scale_y_continuous(breaks = c(0,0.5,1)) +
+  ylab("Relative frequency") + 
+  ggtitle("RNF43 mutations") +  
+theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+
+```{r}
+braf_plot <- left_join(wnt_groups, braf_mut, by = "depmap_id") %>% 
+    dplyr::filter(depmap_id %in% mutation_CL) %>%
+    dplyr::mutate(mutation_type = ifelse(is.na(mutation_type) , "none", mutation_type)) %>%
+  group_by(WNT, mutation_type) %>%
+  dplyr::summarize(n_counts = n()) %>%
+  ggplot(aes(x = WNT, y = n_counts, fill = mutation_type)) +
+  geom_bar(position = "fill",stat = "identity")  +
+    scale_fill_manual(name = "", values = c(gr3, gr1,dist_c)) +
+  scale_x_discrete(limits = c("low", "high"))+
+  scale_y_continuous(breaks = c(0,0.5,1)) +
+  ylab("Relative frequency") +
+  ggtitle("BRAF mutations") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+count cell lines
+```{r}
+wnt_groups %>% 
+    dplyr::filter(depmap_id %in% mutation_CL) %>%
+  group_by(WNT) %>%
+  summarize(n = n())
+```
+
+
+Make msi plot
+```{r}
+msi_plot <- left_join(wnt_groups, metadata_df, by = "depmap_id") %>%
+  dplyr::filter(!is.na(msi_status) & msi_status != "MSI/MSS") %>%
+   group_by(WNT, msi_status) %>%
+  dplyr::summarize(n_counts = n()) %>%
+  ggplot(aes(x = WNT, y = n_counts, fill = msi_status)) +
+  geom_bar(position = "fill",stat = "identity")  +
+    scale_fill_manual(name = "", values = c(msih_c, "gray20", msil_c,mss_c)) +
+  scale_x_discrete(limits = c("low", "high"))+
+  scale_y_continuous(breaks = c(0,0.5,1)) +
+  ylab("Relative frequency") +
+  ggtitle("MS status") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+
+
+# Look for differentially expressed genes
+
+Read in the preanalysed depmapdata 
+```{r}
+res <- readRDS("../r_data/depmap_transcriptomics_limma_wntgroup.RData")
+```
+
+Label Wnt target genes
+```{r}
+m_df = msigdbr(species = "Homo sapiens", category = "H")
+ctnnb1_targets <- m_df %>%
+        dplyr::filter(gs_name == "HALLMARK_WNT_BETA_CATENIN_SIGNALING")
+```
+```{r}
+res$wnt_target <- factor(ifelse(res$SYMBOL %in% ctnnb1_targets$gene_symbol, "CTNNB1\ntarget", "other"), levels = c("CTNNB1\ntarget","other"))
+
+res <- res %>%
+  dplyr::mutate(label = ifelse(adj.P.Val < 0.05 & wnt_target == "CTNNB1\ntarget", SYMBOL, NA))
+```
+
+
+GSEA 
+```{r}
+sortlist <- res$logFC
+names(sortlist) <- res$SYMBOL
+
+t2g <- ctnnb1_targets %>% dplyr::select(gs_name, gene_symbol)
+  
+set.seed(42)
+y <- GSEA(sort(sortlist, decreasing = TRUE), 
+                     TERM2GENE= t2g, verbose=FALSE,  
+                     pvalueCutoff = 0.4)
+as.data.frame(y)
+```
+
+Volcano plot
+```{r}
+depmap_volcano <- res %>%
+  dplyr::filter(SYMBOL != "AXIN2") %>%
+    dplyr::mutate(adj.P.Val = ifelse(adj.P.Val<0.000001,0.000001, adj.P.Val)) %>%
+  arrange(desc(wnt_target)) %>%
+  ggplot(aes(x = logFC, y = -log10(adj.P.Val))) +
+  geom_point(aes(color = wnt_target), size = 0.8) + 
+  geom_text_repel(aes(label = label),
+    ylim = c(2,5), size = 3) +
+  geom_hline(yintercept = -log10(0.1)) +
+  # Add axin2 symbol
+  geom_point(data = res %>%
+  dplyr::filter(SYMBOL == "AXIN2") %>%
+    dplyr::mutate(adj.P.Val = ifelse(adj.P.Val<0.000001, 0.000001, adj.P.Val)), color = apc_c, shape = 17) +
+  geom_text_repel(data = res %>%
+  dplyr::filter(SYMBOL == "AXIN2") %>%
+    dplyr::mutate(adj.P.Val = ifelse(adj.P.Val<0.000001, 0.000001, adj.P.Val)),
+    aes(label = label), size = 3) +
+  scale_color_manual(name = "", values = c(apc_c, gr3)) +
+  theme_bw() + ggtitle("CTNNB1 target genes:\nGSEA p < 0.01") +
+  xlab(expression(Expression ~ logFC ~ (WNT ~ high ~ vs. ~ low))) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+# RKO truncation expression changes
+
+```{r}
+microarray_rko <- readRDS("../external_data/RKO_APC_microarray_resultstable.RData")
+```
+
+```{r}
+microarray_rko$wnt_target <- factor(ifelse(microarray_rko$SYMBOL %in% ctnnb1_targets$gene_symbol, "CTNNB1\ntarget", "none"), levels = c("CTNNB1\ntarget","none"))
+
+microarray_rko <- microarray_rko %>%
+  dplyr::mutate(label = ifelse(adj.P.Val < 0.05 & wnt_target == "CTNNB1\ntarget", SYMBOL, NA))
+```
+
+GSEA 
+```{r}
+sortlist <- microarray_rko$logFC
+names(sortlist) <- microarray_rko$SYMBOL
+
+t2g <- ctnnb1_targets %>% dplyr::select(gs_name, gene_symbol)
+  
+set.seed(42)
+y_rko <- GSEA(sort(sortlist, decreasing = TRUE), 
+                     TERM2GENE= t2g, verbose=FALSE,  
+                     pvalueCutoff = 0.4)
+as.data.frame(y_rko)
+```
+
+
+```{r}
+rko_volcano <- microarray_rko %>%
+  arrange(desc(wnt_target)) %>%
+  ggplot(aes(x = logFC, y = -log10(adj.P.Val))) +
+  geom_point(aes(color = wnt_target), size = 0.8) + 
+  geom_text_repel(aes(label = label),
+    ylim = c(1.5,5), size = 3) +
+  geom_hline(yintercept = -log10(0.05)) +
+  scale_color_manual(name = "", values = c(apc_c, gr3)) +
+  theme_bw() + ggtitle("Probes for CTNNB1 target genes:\nGSEA p < 0.01") +
+  xlab(expression(Expression ~ logFC ~ (RKO ~ APC^trunc ~ vs. ~ APC^WT))) +
+  theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.3, "cm"),
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+# Assemble Figure
+
+```{r}
+
+scheme <- cowplot::ggdraw() + cowplot::draw_image("intermediate_graphics/APC_trunc.pdf", 
+                                             vjust =0.05,hjust=0,scale=1,
+                                             x=0)
+```
+
+```{r}
+exp_row <- plot_grid(axin2_exp_plot, depmap_volcano, nrow = 1, labels = c("A", "B"))
+
+mut_plot <- plot_grid(apc_plot + theme(legend.box.margin=margin(0,0,0,-10)), 
+  braf_plot + theme(legend.box.margin=margin(0,0,0,-10)), 
+  rnf_sum + theme(legend.box.margin=margin(0,0,0,-10)),
+  kras_plot + theme(legend.box.margin=margin(0,0,0,-10)), 
+  msi_plot + theme(legend.box.margin=margin(0,0,0,-10)),  nrow = 1, 
+  labels = c("C", "D", "E", "F", "G"), rel_widths = c(1,1.05,1.12,1.05,0.95))
+
+volc_plot <- plot_grid(scheme, rko_volcano, nrow = 1, labels = c("H", "I"))
+
+fig2 <- plot_grid(exp_row, mut_plot, volc_plot, ncol =1,
+  rel_heights = c(1,0.8,1))
+
+save_plot("assembled_figures/Figure2.pdf", fig2, base_height = 7, base_width = 8.4)
+
+save_plot("assembled_figures/Figure2.png", fig2, base_height = 7, base_width = 8.4)
+```
+

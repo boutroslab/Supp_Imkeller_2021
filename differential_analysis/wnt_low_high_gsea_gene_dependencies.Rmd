@@ -1,0 +1,167 @@
+---
+title: "GSEA - Genetic dependency data"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("gsea_functions.R")
+source("definitions_analysis_visualization.R")
+library(gscreend)
+library(enrichplot)
+```
+
+## Import differential dependency data
+
+We import differential gene dependency data comparing Wnt-low and Wnt-high colorectal cancer cell lines from the DepMap project.
+
+```{r}
+depmap_dep <- readRDS("../r_data/depmap_dependency_limma_wntgroup.RData")
+```
+
+We import differential dependency data from our CRISPR screen. The differential gene dependencies were calculated in APCtrunc versus APCwt cell lines of both RKO and HCT116 background, this is why we import two result tables.
+
+```{r}
+rko_rdata <- readRDS('../r_data/RKO_WT_vs_APC.RData')
+rko_res <- ResultsTable(rko_rdata) %>% dplyr::rename(SYMBOL = Name)
+
+hct_rdata <- readRDS('../r_data/HCT_WT_vs_APC.RData')
+hct_res <- ResultsTable(hct_rdata) %>% dplyr::rename(SYMBOL = Name)
+```
+
+Gene set enrichment analysis is based on ENTREZID gene annotation, which we need to add to our CRISPR screening results.
+
+```{r, warning=FALSE, message=FALSE}
+symbols_screen <- clusterProfiler::bitr(rko_res$SYMBOL, fromType = "SYMBOL", 
+  toType= c("ENTREZID", "ENSEMBL"), OrgDb =org.Hs.eg.db) 
+symbols_screen <- symbols_screen %>% 
+  # remove empty and ambiguous annotations
+  drop_na() %>%
+  dplyr::filter(!duplicated(ENTREZID) & !duplicated(SYMBOL) & !duplicated(ENSEMBL))
+
+# only keep results with correct annotation
+rko_res_filtered <- left_join(rko_res, symbols_screen, by = "SYMBOL") %>%
+  drop_na()
+hct_res_filtered <- left_join(hct_res, symbols_screen, by = "SYMBOL") %>%
+  drop_na()
+```
+## Gene set enrichment analysis on Reactome annotation
+
+```{r, warning=FALSE, message=FALSE}
+rko_react_res <- performreactGSEA(rko_res_filtered) 
+hct_react_res <- performreactGSEA(hct_res_filtered) 
+dep_react_res <- performreactGSEA(depmap_dep) 
+```
+### Visualization of gene set with differential dependence in RKO-APCtrunc vs. RKO-APCwt cell lines.
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+set.seed(2)
+pl1 <- ReactomePA::emapplot(pairwise_termsim(rko_react_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE)
+
+save_plot("../supplementary_material/FigS3A.png", pl1, base_width = 20, base_height = 20)
+save_plot("../supplementary_material/FigS3A.pdf", pl1, base_width = 20, base_height = 20)
+```
+
+### Visualization of gene set with differential dependence in HCT116-APCtrunc vs. HCT116-APCwt cell lines.
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+set.seed(3)
+pl2 <- ReactomePA::emapplot(pairwise_termsim(hct_react_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE)
+
+save_plot("../supplementary_material/FigS3B.png", pl2, base_width = 25, base_height = 15)
+save_plot("../supplementary_material/FigS3B.pdf", pl2, base_width = 25, base_height = 15)
+```
+
+### Visualization of gene set with differential dependence in Wnt-high vs. Wnt-low colorectal cancer cell lines (DepMap).
+
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+set.seed(1)
+pl3 <- ReactomePA::emapplot(pairwise_termsim(dep_react_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE)
+
+save_plot("../supplementary_material/FigS3C.png", pl3, base_width = 20, base_height = 20)
+save_plot("../supplementary_material/FigS3C.pdf", pl3, base_width = 20, base_height = 20)
+```
+
+Store results in a data frame for later visualization in the main figures.
+
+```{r}
+reactome_df <- rbind(as.data.frame(rko_react_res) %>% dplyr::mutate(contrast = "RKO"),
+                     as.data.frame(hct_react_res)  %>% dplyr::mutate(contrast = "HCT116"),
+                     as.data.frame(dep_react_res)  %>% dplyr::mutate(contrast = "DepMap"))
+```
+
+## Gene set enrichment analysis on GO term cellular component annotation
+
+```{r, warning=FALSE, message=FALSE}
+rko_cc_res <- performmsigdbGSEA(rko_res_filtered, type="CC")
+hct_cc_res <- performmsigdbGSEA(hct_res_filtered, type="CC")
+dep_cc_res <- performmsigdbGSEA(depmap_dep, type="CC")
+```
+### Visualization of gene set with differential dependence in RKO-APCtrunc vs. RKO-APCwt cell lines.
+
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+set.seed(1)
+pl4 <- ReactomePA::emapplot(pairwise_termsim(rko_cc_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE)
+
+save_plot("../supplementary_material/FigS3D.png", pl4, base_width = 19, base_height = 19)
+save_plot("../supplementary_material/FigS3D.pdf", pl4, base_width = 19, base_height = 19)
+```
+
+### Visualization of gene set with differential dependence in HCT116-APCtrunc vs. HCT116-APCwt cell lines.
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+set.seed(1)
+pl5 <- ReactomePA::emapplot(pairwise_termsim(hct_cc_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE)
+
+save_plot("../supplementary_material/FigS3E.png", pl5, base_width = 10, base_height = 12)
+save_plot("../supplementary_material/FigS3E.pdf", pl5, base_width = 10, base_height = 12)
+```
+
+### Visualization of gene set with differential dependence in Wnt-high vs. Wnt-low colorectal cancer cell lines (DepMap).
+
+```{r, error = TRUE, warning=FALSE, message=FALSE}
+set.seed(1)
+pl6 <- ReactomePA::emapplot(pairwise_termsim(dep_cc_res), 
+  showCategory = 200, color = "enrichmentScore",
+  force = 10, repel = TRUE)
+
+save_plot("../supplementary_material/FigS3F.png", pl6, base_width = 20, base_height = 15)
+save_plot("../supplementary_material/FigS3F.pdf", pl6, base_width = 20, base_height = 15)
+```
+
+```{r}
+cc_df <- rbind(as.data.frame(rko_cc_res) %>% dplyr::mutate(contrast = "RKO"),
+               as.data.frame(hct_cc_res) %>% dplyr::mutate(contrast = "HCT116"),
+               as.data.frame(dep_cc_res) %>% dplyr::mutate(contrast = "DepMap"))
+```
+
+```{r, eval=FALSE}
+saveRDS(reactome_df, "dependencies_gsea_reactome.RData")
+saveRDS(cc_df, "dependencies_gsea_cc.RData")
+```
+
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+

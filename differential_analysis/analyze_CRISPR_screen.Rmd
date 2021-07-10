@@ -1,0 +1,79 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(cowplot)
+library(gscreend)
+library(SummarizedExperiment)
+library(tidyverse)
+```
+
+### Analyze gscreend T1 vs. T1
+
+Load table with gRNA abundances at different screening timepoints.
+
+```{r}
+complete_table <- read_csv("../external_data/CRISPR_screen_gRNA_counts.csv")
+```
+
+```{r}
+complete_table_norm <- complete_table %>%
+    # calculate normalized mean
+    dplyr::mutate(library_sn = plasmid_library_R1) %>%
+    dplyr::mutate_at(.funs = funs(sn = ./sum(.) * sum(plasmid_library_R1)), .vars = 5:12) %>%
+    dplyr::mutate(HCT_APC_T17 = (HCT116_APC_T17_R1_sn + HCT116_APC_T17_R2_sn)/2,
+                  HCT_WT_T14 = (HCT116_WT_T14_R1_sn + HCT116_WT_T14_R1_sn)/2,
+                  RKO_WT_T20 = (RKO_WT_T20_R1_sn + RKO_WT_T20_R2_sn)/2, 
+                  RKO_APC_T20 = (RKO_APC_T20_R1_sn + RKO_APC_T20_R1_sn)/2)
+```
+
+# analyze gscreens APC vs WT
+
+RKO
+```{r}
+counts_matrix <- cbind(complete_table_norm$RKO_WT_T20,
+    complete_table_norm$RKO_APC_T20)
+
+rowData <- data.frame(sgRNA_id = complete_table_norm$sgRNA,
+                           gene = complete_table_norm$gene)
+
+colData <- data.frame(samplename = c("WT", "APC"),
+                      # timepoint naming convention: 
+                      # T0 -> reference, 
+                      # T1 -> selected
+                      timepoint = c("T0", "T1"))
+
+se_RKO <- SummarizedExperiment(assays=list(counts=counts_matrix),
+                        rowData=rowData, colData=colData)
+
+pse_RKO <- createPoolScreenExp(se_RKO)
+
+pse_RKO <- RunGscreend(pse_RKO, quant1 = 0.1, quant2 = 0.9, alphacutoff = 0.2)
+
+saveRDS(pse_RKO,"../r_data/RKO_WT_vs_APC.RData")
+```
+
+HCT
+```{r}
+counts_matrix <- cbind(complete_table_norm$HCT_WT_T14,
+    complete_table_norm$HCT_APC_T17)
+
+rowData <- data.frame(sgRNA_id = complete_table_norm$sgRNA,
+                           gene = complete_table_norm$gene)
+
+colData <- data.frame(samplename = c("WT", "APC"),
+                      # timepoint naming convention: 
+                      # T0 -> reference, 
+                      # T1 -> selected
+                      timepoint = c("T0", "T1"))
+
+se_HCT <- SummarizedExperiment(assays=list(counts=counts_matrix),
+                        rowData=rowData, colData=colData)
+
+pse_HCT <- RunGscreend(pse_HCT, quant1 = 0.2, quant2 = 0.8, alphacutoff = 0.2)
+
+saveRDS(pse_HCT,"../r_data/HCT116_WT_vs_APC.RData")
+```

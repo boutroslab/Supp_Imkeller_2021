@@ -1,0 +1,80 @@
+---
+title: "TCGA extract trancript counts using DESeq2"
+author: Katharina Imkeller
+date: 01. June 2021
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Aim
+
+This script generates a RData table containing the RNAseq counts for all TCGA samples annotated in the script TCGA_matadata_mutations.Rmd. The counts are library size normalized using DESeq2.
+
+```{r, message=FALSE}
+library(DESeq2)
+```
+
+
+# Import metadata generated in TCGA_matadata_mutations.Rmd
+
+This table contains metainformation for all TCGA READ and COAD samples. The first column identifies the respective sequencing files.
+
+```{r}
+sample_table <- readRDS("../r_data/TCGA_COAD_READ_rnaseq_annotation.RData")
+```
+
+# Use DESeq2 to read seqfiles
+
+## Move sequence files to a common directory
+
+In order to use the DESeq2 automated data input, we need to move all count files downloaded in the previous script into a common directory.
+
+```{bash, eval=FALSE}
+mkdir ./GDCdata/quant_files/
+```
+
+```{bash, eval=FALSE}
+mv ./GDCdata/TCGA-READ/harmonized/Transcriptome_Profiling/Gene_Expression_Quantification/*/*.htseq.counts.gz ./GDCdata/quant_files/
+```
+
+```{bash, eval=FALSE}
+mv ./GDCdata/TCGA-COAD/harmonized/Transcriptome_Profiling/Gene_Expression_Quantification/*/*.htseq.counts.gz ./GDCdata/quant_files/
+```
+
+```{bash, eval=FALSE}
+gzip -d ./GDCdata/quant_files/*.gz
+```
+
+
+## Generate DESeq2 object
+
+```{r, eval=FALSE}
+dds <- DESeqDataSetFromHTSeqCount(sampleTable = data.frame(sample_table),
+                                       directory = "./GDCdata/quant_files",
+                                       design= ~ 1)
+
+rownames(dds) <- substr(rownames(dds), 1, 15)
+
+# only keep genes with reasonable expression
+keep <- rowSums(counts(dds)) >= 10
+dds<- dds[keep,]
+
+dds <- DESeq(dds)
+
+all_counts <- counts(dds)
+all_counts_normalized <- counts(dds, normalized = TRUE)
+
+dim(all_counts)
+dim(all_counts_normalized)
+
+saveRDS(all_counts_normalized, "../r_data/TCGA_allcounts_normalized.RData")
+saveRDS(all_counts, "../r_data/TCGA_allcounts_raw.RData")
+
+```
+# Session info + package versions
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,182 @@
+\documentclass[11pt,a4paper,titlepage]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage[margin=2cm]{geometry}
+
+\begin{document}
+
+\begin{center}
+
+
+\Huge{Supplementary Figures}
+
+\vspace{2cm}
+\huge{Metabolic balance in colorectal cancer is maintained by 
+optimal Wnt signaling levels}
+
+\vspace{2cm}
+\large{Katharina Imkeller, Giulia Ambrosi, Nancy Klemm,\\Ainara Claveras Cabezudo, 
+Luisa Henkel, Wolfgang Huber, Michael Boutros}
+\end{center}
+
+\titlepage
+
+\pagebreak
+
+\section*{Figure S1}
+
+\textbf{Engineered APC truncation in HCT116 and RKO cells}\\
+A: Strategy for generation of APC$^{trunc}$ single cell clones from HCT116 and RKO cell lines\\
+B: Western blot analysis of APC protein size and expression in HCT116, HCT116-APC$^{trunc}$\#2, RKO and RKO-APC$^{trunc}$\#5 cells. Detection of viculin was used as a loading control.\\
+C: TCF4/Wnt-reporter activity in HCT116, HCT116-APC$^{trunc}$\#2, RKO and RKO-APC$^{trunc}$\#5 cells. Results show normalized mean +/- SD reporter activity over seven technical replicates within one experiment. The data is representative of at least three independent experiments that were performed.
+
+\begin{figure}[h]
+\includegraphics[scale=0.9]{FigureS1.pdf} 
+
+\end{figure}
+
+\pagebreak
+\section*{Figure S2}
+
+\textbf{Analysis of whole-genome CRISPR screen.}\\
+A: Between replicate correlation coefficient for the four different cell lines (HCT116 and RKO with APC$^{WT}$ ("WT") and APC$^{trunc}$ ("APC"). Each screen was performed in 2 replicates. \\
+B: Between replicate correlation. gRNA counts after the screen in replicates R2 vs. R1 are displayed (pseudocount added and displayed as logarithm of 2). The red line indicates the results of a linear model fitting (using the function ggplot2::geom\_smooth(method = "lm")). \\
+C: Precision-recall curves based on "core-essential" and "non-essential" gene assignment as in BAGEL software (Hart et al. 2016). One precision-recall curve was calculated for every individual cell line by comparing gRNA abundance before and after the screen. All four screens showed satisfying precision-recall statistics, indicating a good data quality for phenotype detection.\\
+D: Results from gscreend analysis comparing gRNA abundance after the screen in APC$^{trunc}$ versus APC$^{WT}$ cells. Genes are classified as "core-essential" or "non-essential" as in C. The horizontal line indicates an adjusted p-value of 0.1.\\
+
+\begin{figure}[h]
+\includegraphics[scale=0.7]{FigureS2.pdf} 
+\end{figure}
+
+\clearpage
+
+\pagebreak
+\section*{Figure S3}
+\textbf{Gene set enrichment analysis on genetic dependencies.}\\
+We performed gene set enrichment analysis using Reactome (A-C) and GO cellular component (D-F) gene set annotation. For both annotation schemes, enrichment analysis was performed for RKO background (A+D), HCT116 background (B+E) and DepMap data (C+F). For RKO and HCT116 background the genes were ordered according to their differential essentiality in APC$^{trunc}$ compared to APC$^{WT}$ cells. For the analysis on DepMap data, genes were ordered according to their differential essentiality in Wnt-high compared to Wnt-low cell lines. Negative enrichment scores thus indicate gene sets whose members are more essential in APC$^{trunc}$ or Wnt-high cells than in APC$^{WT}$ or Wnt-low cells. \\
+
+\begin{figure}[h!]
+\textbf{S3A) Reactome GSEA, differential gene dependency (RKO APC$^{trunc}$ vs. APC$^{WT}$)}\\
+
+\smallskip
+\includegraphics[scale=0.28]{FigS3A.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S3B) Reactome GSEA, differential gene dependency (HCT116 APC$^{trunc}$ vs. APC$^{WT}$)}\\
+
+\smallskip
+\includegraphics[scale=0.25]{FigS3B.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S3C) Reactome GSEA, differential gene dependency (DepMap Wnt-high vs. Wnt-low)}\\
+
+\smallskip
+\includegraphics[scale=0.25]{FigS3C.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S3D) GO cellular component GSEA, differential gene dependency\\(RKO APC$^{trunc}$ vs. APC$^{WT}$)}\\
+
+\smallskip
+\includegraphics[scale=0.25]{FigS3D.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S3E) GO cellular component GSEA, differential gene dependency\\(HCT116 APC$^{trunc}$ vs. APC$^{WT}$)}\\
+
+\smallskip
+\includegraphics[scale=0.25]{FigS3E.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S3F) GO cellular component GSEA, differential gene dependency\\(DepMap Wnt-high vs. Wnt-low)}\\
+
+\smallskip
+\includegraphics[scale=0.25]{FigS3F.pdf} 
+\end{figure}
+
+
+\clearpage
+
+\section*{Figure S4}
+
+
+
+\textbf{Gene set enrichment analysis on differential transcript and protein expression.}\\
+We performed gene set enrichment analysis using Reactome (A+B and E+F) and GO cellular component (C+D and G+H) gene set annotation. For both annotation schemes, enrichment analysis was performed for tumor tissue (TCGA, A-D) and colorectal cancer cell lines (DepMap, E-H). The gene list used for GSEA was ordered according to differential transcript expression (A, C, E, G) or differential protein abundance (B, D, F, H) in Wnt-high compared to Wnt-low tumors and cell lines. Positive enrichment scores indicate gene sets whose members are higher expressed in Wnt-high compared to Wnt-low cells and tumors.
+
+%\includegraphics[scale=0.9]{x} 
+\begin{figure}[h!]
+\textbf{S4A) Reactome GSEA, TCGA transcriptomic (Wnt-high vs. Wnt-low)}
+
+\smallskip
+\includegraphics[scale=0.28]{FigS4A.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S4B) Reactome GSEA, TCGA proteomic (Wnt-high vs. Wnt-low)}
+
+\smallskip
+\includegraphics[scale=0.26]{FigS4B.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S4C) GO cellular component GSEA, TCGA transcriptomic (Wnt-high vs. Wnt-low)}
+
+\smallskip
+\includegraphics[scale=0.26]{FigS4C.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S4D) GO cellular component GSEA, TCGA proteomic (Wnt-high vs. Wnt-low)}\\
+
+\smallskip
+\includegraphics[scale=0.23]{FigS4D.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S4E) Reactome GSEA, DepMap transcriptomic (Wnt-high vs. Wnt-low)}\\
+
+\smallskip
+\includegraphics[scale=0.23]{FigS4E.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S4F) Reactome GSEA, DepMap proteomic (Wnt-high vs. Wnt-low)}\\
+
+\smallskip
+\includegraphics[scale=0.25]{FigS4F.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S4G) GO cellular component GSEA, DepMap transcriptomic (Wnt-high vs. Wnt-low)}\\
+
+\smallskip
+\includegraphics[scale=0.25]{FigS4G.pdf} 
+\end{figure}
+
+\begin{figure}[h!]
+\textbf{S4H) GO cellular component GSEA, DepMap proteomic (Wnt-high vs. Wnt-low)}\\
+
+\smallskip
+\includegraphics[scale=0.25]{FigS4H.pdf} 
+\end{figure}
+
+
+\clearpage
+
+\section*{Figure S5}
+
+Transcript expression (A) and protein expression (B) of \textit{SLC16A1} and \textit{PDK1} (y-axis) compared to transcript expression of \textit{AXIN2} (x-axis in the dotplot). Colors indicate CMS classification or normal colon tissue. Violin plots in the left panels illustrate candidate transcript and protein expression in the different CMS and tissue groups.
+
+\begin{figure}[h]
+\includegraphics[scale=0.9]{FigureS5.pdf} 
+
+\end{figure}
+
+\end{document}
