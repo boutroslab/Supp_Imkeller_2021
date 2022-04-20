@@ -37,7 +37,7 @@ hct_rdata <- readRDS('../r_data/HCT_WT_vs_APC.RData')
 ```
 
 ```{r}
-complete_table  <- read_csv("../external_data/CRISPR_screen_gRNA_counts.csv") 
+complete_table  <- read_csv("../external_data/CRISPR_screen_gRNA_counts.csv.gz") 
 ```
 Normalize
 
@@ -105,7 +105,7 @@ performmsigdbGSEA <- function(res, alpha=0.05) {
   
   # generate a sorted list according to stat
   df <- df %>% dplyr::filter(!is.na(ENTREZID))
-  sortlist <- df$lfc
+  sortlist <- abs(df$lfc)
   names(sortlist) <- df$ENTREZID
 
   t2g <- hs_C2_PW %>% dplyr::select(gs_name, entrez_gene)
@@ -113,7 +113,7 @@ performmsigdbGSEA <- function(res, alpha=0.05) {
   set.seed(42)
   y <- GSEA(sort(sortlist, decreasing = TRUE), 
                      TERM2GENE= t2g, verbose=FALSE,  
-                     pvalueCutoff = alpha)
+                     pvalueCutoff = alpha, scoreType = "pos")
   as.data.frame(y)
 }
 
@@ -146,8 +146,8 @@ design<-model.matrix(~wnt_list)
 
 rownames(count_matrix) <- df$gene_name
 
-fit<-lmFit(count_matrix, design)
-fit<-eBayes(fit)
+fit<-lmFit(count_matrix, design, method = "robust")
+fit<-eBayes(fit, robust = TRUE)
 
 res <- topTable(fit,coef=2, number=Inf)   %>%
   rownames_to_column("gene_name")
@@ -161,7 +161,7 @@ df <- left_join(res %>%
   
   # generate a sorted list according to stat
   df <- df %>% dplyr::filter(!is.na(ENTREZID))
-  sortlist <- df$logFC
+  sortlist <- abs(df$logFC)
   names(sortlist) <- df$ENTREZID
 
   t2g <- hs_C2_PW %>% dplyr::select(gs_name, entrez_gene)
@@ -169,7 +169,7 @@ df <- left_join(res %>%
   set.seed(42)
   y <- GSEA(sort(sortlist, decreasing = TRUE), 
                      TERM2GENE= t2g, verbose=FALSE,  
-                     pvalueCutoff = 0.4)
+                     pvalueCutoff = 0.4, scoreType = "pos")
   as.data.frame(y)
 ```
 
@@ -178,7 +178,7 @@ enrichment for Wnt pathway does work!
 
 ```{r}
 label_gene_list <- c("CTNNB1", #"MYC",
-  "GSK3A", "GSK3B", "CCND2")
+  "GSK3A", "TCF7L2", "CUL2")
 
 apc_wt_df <- res %>%
   arrange(-logFC) %>%
@@ -206,7 +206,7 @@ depmap_apc_wt_rank <- apc_wt_df %>%
      theme_bw() +   theme(axis.ticks.y = element_blank(),
                           axis.text.y = element_blank()) +
      xlab("Differential dependence\n(WNT high vs. low)")+ 
-  theme(legend.position = "none") + ggtitle("DepMap colorectal\n(GSEA, p = 0.04)") +
+  theme(legend.position = "none") + ggtitle("DepMap colorectal\n(GSEA, p < 0.01)") +
   theme(
   legend.title = element_text(size = 10),
   legend.text = element_text(size = 8),
@@ -214,7 +214,7 @@ depmap_apc_wt_rank <- apc_wt_df %>%
   axis.text=element_text(size=8),
   axis.title=element_text(size=10),
   plot.title = element_text(size = 10)
-  )
+  ) + xlim(c(-0.8,0.3))
 ```
 
 
@@ -245,7 +245,7 @@ plot_screen_ranks <- function(df, gene_list) {
       geom_text_repel(data = label_df, aes(label = Name),
                       force = 2, box.padding = 0.15, segment.alpha = 0.3,
                       size = 3,
-                      xlim = c(-3,-1), color = dp_high) +
+                      xlim = c(-3.5,-1.5), color = dp_high) +
      theme_bw() +   theme(axis.ticks.y = element_blank(),
                           axis.text.y = element_blank()) +
      xlab(expression(APC^trunk ~ vs. ~ APC^WT)) +
@@ -262,12 +262,12 @@ plot_screen_ranks <- function(df, gene_list) {
 
 set.seed(42)
 hct_wnt_rank <- plot_screen_ranks(hct_rdata, wnt_genes$human_gene_symbol) + 
-  theme(legend.position = "none") + ggtitle("HCT116 CRISPR-screen\n(no enrichment, p = 0.46)")
+  theme(legend.position = "none") + ggtitle("HCT116 CRISPR-screen\n(no enrichment, p = 0.47)")
 ```
 ```{r}
 set.seed(42)
 rko_wnt_rank <- plot_screen_ranks(rko_rdata, wnt_genes$human_gene_symbol) +
-  theme(legend.position = "none") + ggtitle("RKO CRISPR-screen\n(no enrichment, p = 0.41)")
+  theme(legend.position = "none") + ggtitle("RKO CRISPR-screen\n(no enrichment, p = 0.26)")
 ```
 
 Screen on grna level
@@ -370,14 +370,17 @@ rko <- metadata_df %>% dplyr::filter(stripped_cell_line_name.x == "RKO")
 
 
 ```{r}
-wnt_ctnnb1 <- left_join(axin2, ctnnb1, by = "depmap_id", suffix = c(".axin2", ".ctnnb1")) %>%
+wnt_ctnnb1_df <- left_join(axin2, ctnnb1, by = "depmap_id", suffix = c(".axin2", ".ctnnb1")) %>%
   # annotate HCT 116 and RKO
   dplyr::mutate(label = ifelse(depmap_id %in% hct116, "HCT116",
                                ifelse(depmap_id %in% rko, "RKO", NA))) %>%
-  dplyr::mutate(wnt_group = ifelse(rna_expression < 4.5, "low", "high")) %>%
+  dplyr::mutate(wnt_group = ifelse(rna_expression < depmap_axin2_threshold, "low", "high"))
+
+
+wnt_ctnnb1 <- wnt_ctnnb1_df %>%
   ggplot(aes(y = dependency, x = rna_expression)) +
   geom_point(aes(color = wnt_group), size = 0.7) + 
-    geom_text_repel(aes(label = label), xlim = c(1.5,3)) +
+    geom_text_repel(aes(label = label), xlim = c(4.5,8), size = 3) +
   theme_bw() + #theme(legend.position = c(0.2,0.2)) +
   scale_color_manual(name = "WNT", values = c(wntl_c, wnth_c)) +
   xlab(expression(italic("AXIN2") ~ expression)) + ylab("Dependence\non CTNNB1") +
@@ -390,6 +393,13 @@ wnt_ctnnb1 <- left_join(axin2, ctnnb1, by = "depmap_id", suffix = c(".axin2", ".
   axis.title=element_text(size=10),
   plot.title = element_text(size = 10)
   )
+```
+Test for significance
+
+```{r}
+
+wilcox.test(dependency~wnt_group, data = wnt_ctnnb1_df , exact = FALSE, correct = FALSE, conf.int = FALSE)
+
 ```
 
 
@@ -406,7 +416,7 @@ col2 <- plot_grid(depmap_apc_wt_rank, wnt_ctnnb1, labels = c("B", "C"),
   ncol = 1, rel_heights = c(1,0.8))
 row1 <- plot_grid(col1, col2, nrow =1, rel_widths = c(1,0.7))
 
-row2 <- plot_grid(hct_wnt_rank, rko_wnt_rank, fc_grna_plot , 
+row2 <- plot_grid(hct_wnt_rank + xlim(c(-3.5,3)), rko_wnt_rank, fc_grna_plot , 
   labels = c("D", "E", "F"), nrow = 1, rel_widths = c(1,1,1.5))
 
 fig3 <- plot_grid(row1, row2 , rel_heights = c(1,0.65), ncol = 1)

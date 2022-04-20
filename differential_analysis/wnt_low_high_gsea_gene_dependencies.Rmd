@@ -60,8 +60,8 @@ pl1 <- ReactomePA::emapplot(pairwise_termsim(rko_react_res),
   showCategory = 200, color = "enrichmentScore",
   force = 10, repel = TRUE)
 
-save_plot("../supplementary_material/FigS3A.png", pl1, base_width = 20, base_height = 20)
-save_plot("../supplementary_material/FigS3A.pdf", pl1, base_width = 20, base_height = 20)
+save_plot("../supplementary_material/FigS4A.png", pl1, base_width = 20, base_height = 20)
+save_plot("../supplementary_material/FigS4A.pdf", pl1, base_width = 20, base_height = 20)
 ```
 
 ### Visualization of gene set with differential dependence in HCT116-APCtrunc vs. HCT116-APCwt cell lines.
@@ -72,8 +72,8 @@ pl2 <- ReactomePA::emapplot(pairwise_termsim(hct_react_res),
   showCategory = 200, color = "enrichmentScore",
   force = 10, repel = TRUE)
 
-save_plot("../supplementary_material/FigS3B.png", pl2, base_width = 25, base_height = 15)
-save_plot("../supplementary_material/FigS3B.pdf", pl2, base_width = 25, base_height = 15)
+save_plot("../supplementary_material/FigS4B.png", pl2, base_width = 25, base_height = 15)
+save_plot("../supplementary_material/FigS4B.pdf", pl2, base_width = 25, base_height = 15)
 ```
 
 ### Visualization of gene set with differential dependence in Wnt-high vs. Wnt-low colorectal cancer cell lines (DepMap).
@@ -85,8 +85,8 @@ pl3 <- ReactomePA::emapplot(pairwise_termsim(dep_react_res),
   showCategory = 200, color = "enrichmentScore",
   force = 10, repel = TRUE)
 
-save_plot("../supplementary_material/FigS3C.png", pl3, base_width = 20, base_height = 20)
-save_plot("../supplementary_material/FigS3C.pdf", pl3, base_width = 20, base_height = 20)
+save_plot("../supplementary_material/FigS4C.png", pl3, base_width = 20, base_height = 20)
+save_plot("../supplementary_material/FigS4C.pdf", pl3, base_width = 20, base_height = 20)
 ```
 
 Store results in a data frame for later visualization in the main figures.
@@ -113,8 +113,8 @@ pl4 <- ReactomePA::emapplot(pairwise_termsim(rko_cc_res),
   showCategory = 200, color = "enrichmentScore",
   force = 10, repel = TRUE)
 
-save_plot("../supplementary_material/FigS3D.png", pl4, base_width = 19, base_height = 19)
-save_plot("../supplementary_material/FigS3D.pdf", pl4, base_width = 19, base_height = 19)
+save_plot("../supplementary_material/FigS4D.png", pl4, base_width = 19, base_height = 19)
+save_plot("../supplementary_material/FigS4D.pdf", pl4, base_width = 19, base_height = 19)
 ```
 
 ### Visualization of gene set with differential dependence in HCT116-APCtrunc vs. HCT116-APCwt cell lines.
@@ -125,8 +125,8 @@ pl5 <- ReactomePA::emapplot(pairwise_termsim(hct_cc_res),
   showCategory = 200, color = "enrichmentScore",
   force = 10, repel = TRUE)
 
-save_plot("../supplementary_material/FigS3E.png", pl5, base_width = 10, base_height = 12)
-save_plot("../supplementary_material/FigS3E.pdf", pl5, base_width = 10, base_height = 12)
+save_plot("../supplementary_material/FigS4E.png", pl5, base_width = 10, base_height = 12)
+save_plot("../supplementary_material/FigS4E.pdf", pl5, base_width = 10, base_height = 12)
 ```
 
 ### Visualization of gene set with differential dependence in Wnt-high vs. Wnt-low colorectal cancer cell lines (DepMap).
@@ -137,8 +137,8 @@ pl6 <- ReactomePA::emapplot(pairwise_termsim(dep_cc_res),
   showCategory = 200, color = "enrichmentScore",
   force = 10, repel = TRUE)
 
-save_plot("../supplementary_material/FigS3F.png", pl6, base_width = 20, base_height = 15)
-save_plot("../supplementary_material/FigS3F.pdf", pl6, base_width = 20, base_height = 15)
+save_plot("../supplementary_material/FigS4F.png", pl6, base_width = 20, base_height = 15)
+save_plot("../supplementary_material/FigS4F.pdf", pl6, base_width = 20, base_height = 15)
 ```
 
 ```{r}

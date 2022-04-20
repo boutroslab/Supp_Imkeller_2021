@@ -207,6 +207,114 @@ axin2_tcga1 <- df_plot_gene %>%
   )
 ```
 
+Additional plots for the supplement:
+NKD1, TCF7, WNT5B
+```{r}
+df_plot_gene2 <- left_join(counts_table %>% dplyr::select(id, ENSG00000140807 ), 
+                          classified_samples, by = "id") 
+
+nkd1_tcga1 <- df_plot_gene2 %>%
+  dplyr::mutate(prediction = ifelse(is.na(prediction), "NA", prediction)) %>%
+  ggplot(aes(x = prediction, y = log2(ENSG00000140807 ), color = prediction)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(size = 0.8) +
+  # the colors are assigned in the definitions.R file that I also use for the other figures
+  scale_color_manual(values = c(cms1_c, cms2_c, cms3_c, cms4_c, gr2, gr1))+
+  theme_bw() + theme(legend.position = "none") +
+  scale_x_discrete(labels = c("CMS1","CMS2","CMS3","CMS4","NA","normal")) +
+  xlab("") + ylab(expression(italic(NKD1) ~ expression ~ (log[2]))) +
+  ggtitle("TCGA-COAD and TCGA-READ\n(transcriptomic)") +
+  theme(
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+```{r}
+df_plot_gene3 <- left_join(counts_table %>% dplyr::select(id, ENSG00000081059), 
+                          classified_samples, by = "id") 
+
+tcf7_tcga1 <- df_plot_gene3 %>%
+  dplyr::mutate(prediction = ifelse(is.na(prediction), "NA", prediction)) %>%
+  ggplot(aes(x = prediction, y = log2(ENSG00000081059), color = prediction)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(size = 0.8) +
+  # the colors are assigned in the definitions.R file that I also use for the other figures
+  scale_color_manual(values = c(cms1_c, cms2_c, cms3_c, cms4_c, gr2, gr1))+
+  theme_bw() + theme(legend.position = "none") +
+  scale_x_discrete(labels = c("CMS1","CMS2","CMS3","CMS4","NA","normal")) +
+  xlab("") + ylab(expression(italic(TCF7) ~ expression ~ (log[2]))) +
+  ggtitle("TCGA-COAD and TCGA-READ\n(transcriptomic)") +
+  theme(
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+
+```{r}
+df_plot_gene4 <- left_join(counts_table %>% dplyr::select(id, ENSG00000111186), 
+                          classified_samples, by = "id") 
+
+wnt5b_tcga1 <- df_plot_gene4 %>%
+  dplyr::mutate(prediction = ifelse(is.na(prediction), "NA", prediction)) %>%
+  ggplot(aes(x = prediction, y = log2(ENSG00000111186), color = prediction)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(size = 0.8) +
+  # the colors are assigned in the definitions.R file that I also use for the other figures
+  scale_color_manual(values = c(cms1_c, cms2_c, cms3_c, cms4_c, gr2, gr1))+
+  theme_bw() + theme(legend.position = "none") +
+  scale_x_discrete(labels = c("CMS1","CMS2","CMS3","CMS4","NA","normal")) +
+  xlab("") + ylab(expression(italic(WNT5B) ~ expression ~ (log[2]))) +
+  ggtitle("TCGA-COAD and TCGA-READ\n(transcriptomic)") +
+  theme(
+  axis.text=element_text(size=8),
+  axis.title=element_text(size=10),
+  plot.title = element_text(size = 10)
+  )
+```
+PCA according to Wnt gene expression
+
+```{r}
+
+mat.pca <- prcomp(mat , center = TRUE, scale. = TRUE)
+
+summary(mat.pca)
+
+head(mat.pca$x, 10)
+```
+
+```{r}
+mat.pca.var = mat.pca$sdev^2
+mat.pca.ve <- mat.pca.var/sum(mat.pca.var)
+as.integer(mat.pca.ve * 100)
+```
+
+```{r}
+pca_plot <- data.frame(mat.pca$rotation) %>%
+  dplyr::mutate(class = rownames(mat.pca$rotation)) %>%
+  ggplot(aes(x = PC1, y = PC2, color = class)) +
+  geom_point() +
+  xlab("PC1 (23%)") + ylab("PC2 (10%)") + theme_bw() +
+  scale_color_manual(values = c(cms1_c, cms2_c, cms3_c, cms4_c, gr1, gr2))
+```
+```{r}
+pc_df <- data.frame(mat.pca$x) %>%
+  rownames_to_column("gene") %>%
+  dplyr::filter(abs(PC1) > 10 | abs(PC2) > 10) %>%
+  dplyr::select(gene, PC1, PC2) %>%
+  pivot_longer(names_to = "component", values_to = "contribution", - gene) %>%
+  arrange(contribution)
+```
+```{r}
+con_genes <- pc_df %>%
+  ggplot(aes(y = gene, x = contribution)) +
+  geom_col() + facet_wrap(~component) + theme_bw()
+```
+
+
+
 ### AXIN2 and CTNNB1 expression protein
 
 In the TCGA 2019 dataset show the correlation between AXIN2 expression and CTNNB1 protein level.
@@ -338,18 +446,31 @@ mutation_plot <- left_join(gene_mutations,tile_df , by = "cases_sample") %>%
 # Statistics Wnt independent, Wnt dependent
  MSI / colon localization
 ```{r}
-loc_sum <- pre_tile_df %>%
+loc_sum_df <- pre_tile_df %>%
   dplyr::filter(!is.na(proximal_distal)) %>%
   # we don't want to display samples with undefined Microsatellite status
   dplyr::filter(!is.na(msi_status) & msi_status != "Indeterminate") %>%
   group_by(WNT, proximal_distal) %>%
-  summarize(n = n())%>%
+  summarize(n = n())
+```
+
+localization statistical test
+
+```{r}
+loc_test_df <- loc_sum_df  %>%
+  pivot_wider(names_from = proximal_distal, values_from = n)
+
+fisher.test(loc_test_df [,-1])
+```
+
+```{r}
+loc_sum <- loc_sum_df %>%
   ggplot(aes(x = WNT, y = n, fill = proximal_distal)) +
   geom_bar(position = "fill",stat = "identity") +
   scale_fill_manual(name = "", limits = c("Colon, NOS","Colon proximal","Colon distal", "Rectum, NOS"),
                      values = c(gr2, prox_c, dist_c, rectum_c)) +
   scale_x_discrete(limits = c("low", "high")) +
-  ggtitle("Localization") + theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  ggtitle("Localization\np < 0.01") + theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
   scale_y_continuous(breaks = c(0,0.5,1)) +
   ylab("Relative frequency") +
   theme(
@@ -393,6 +514,18 @@ apc_int_df <- left_join(pre_tile_df ,
   summarize(count = n())
 
 apc_int_df$n <- factor(apc_int_df$n,levels = c("0","1",">=2"))
+```
+
+APC statistical test
+
+```{r}
+apc_test_df <- apc_int_df %>%
+  pivot_wider(names_from = n, values_from = count)
+
+fisher.test(apc_test_df[,-1])
+```
+
+```{r}
 
 apc_sum <- apc_int_df %>%
   ggplot(aes(x = WNT, y = count, fill = n)) +
@@ -401,7 +534,7 @@ apc_sum <- apc_int_df %>%
   scale_x_discrete(limits = c("low", "high")) +
   scale_y_continuous(breaks = c(0,0.5,1)) +
   ylab("Relative frequency") + 
-  ggtitle("APC truncations") +  
+  ggtitle("APC truncations\np < 0.01") +  
   theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
   theme(
   legend.title = element_text(size = 10),
@@ -412,8 +545,10 @@ apc_sum <- apc_int_df %>%
   plot.title = element_text(size = 10)
   )
 ```
+
+
 ```{r}
-braf_sum <- left_join(pre_tile_df , 
+braf_int_df <- left_join(pre_tile_df , 
            gene_mutations %>% dplyr::filter(Hugo_Symbol == "BRAF"), by = "cases_sample") %>%
   dplyr::filter(!is.na(proximal_distal)) %>%
   # we don't want to display samples with undefined Microsatellite status
@@ -424,14 +559,27 @@ braf_sum <- left_join(pre_tile_df ,
                                        ifelse(HGVSp_Short== "p.V600E", "p.V600E", "other\nmissense"))) %>%
  # I checked that there are not 2 mutations in 1 sample
   group_by(WNT, mutation_type) %>%
-  summarize(n = n()) %>%
+  summarize(n = n())
+```
+
+BRAF statistical test
+
+```{r}
+braf_test_df <- braf_int_df %>%
+  pivot_wider(names_from = mutation_type, values_from = n)
+
+fisher.test(braf_test_df [,-1])
+```
+  
+```{r}
+braf_sum <- braf_int_df %>%
   ggplot(aes(x = WNT, y = n, fill = mutation_type)) +
   geom_bar(position = "fill",stat = "identity") +
     scale_fill_manual(name = "", values = c(gr3, gr1,dist_c)) +
   scale_x_discrete(limits = c("low", "high")) +
   scale_y_continuous(breaks = c(0,0.5,1)) +
   ylab("Relative frequency") + 
-  ggtitle("BRAF mutations") +  
+  ggtitle("BRAF mutations\np < 0.01") +  
   theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
   theme(
   legend.title = element_text(size = 10),
@@ -453,21 +601,32 @@ rnf43_int_df <- left_join(pre_tile_df ,
   dplyr::group_by(cases_sample, WNT) %>%
   dplyr::mutate(mutation_type = ifelse(is.na(mutation), "none", 
     ifelse(HGVSp_Short == "p.G659Vfs*41", "G659Vfs*41", 
-      ifelse(mutation == "truncating", "other\ntruncating", mutation))))
+      ifelse(mutation == "truncating", "other\ntruncating", mutation)))) %>%
+  # I checked that there are not 2 mutations in 1 sample
+  group_by(WNT, mutation_type) %>%
+  summarize(n = n())
 
 rnf43_int_df$mutation_type <- factor(rnf43_int_df$mutation_type,levels = c("none","missense","G659Vfs*41","other\ntruncating"))
+```
 
+RNF43 statistical test
+
+```{r}
+rnf43_test_df <- rnf43_int_df %>%
+  pivot_wider(names_from = mutation_type, values_from = n)
+
+fisher.test(rnf43_test_df [,-1])
+```
+
+```{r}
 rnf_sum <- rnf43_int_df %>%
- # I checked that there are not 2 mutations in 1 sample
-  group_by(WNT, mutation_type) %>%
-  summarize(n = n()) %>%
   ggplot(aes(x = WNT, y = n, fill = mutation_type)) +
   geom_bar(position = "fill",stat = "identity") +
     scale_fill_manual(name = "", values = c(gr3, gr2, dist_c, gr1)) +
   scale_x_discrete(limits = c("low", "high")) +
   scale_y_continuous(breaks = c(0,0.5,1)) +
   ylab("Relative frequency") + 
-  ggtitle("RNF43 mutations") +  
+  ggtitle("RNF43 mutations\np < 0.01") +  
   theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
   theme(
   legend.title = element_text(size = 10),
@@ -506,10 +665,23 @@ kras_df <- left_join(tile_df ,
                                        ifelse(Protein_position == "12/189" | Protein_position == "13/189", "G12|G13", 
                                              "other\nmissense"))) %>%
  # I checked that there are not 2 mutations in 1 sample
-  group_by(WNT, prediction, mutation_type) %>%
+  group_by(WNT, mutation_type) %>%
   summarize(n = n())
 
 kras_df$mutation_type <- factor(kras_df$mutation_type, levels = c("none","other\nmissense","G12|G13" ))
+```
+
+
+KRAS statistical test
+
+```{r}
+kras_test_df <- kras_df  %>%
+  pivot_wider(names_from = mutation_type, values_from = n)
+
+fisher.test(kras_test_df [,-1])
+```
+
+```{r}
 
 kras_sum <- kras_df %>%
   ggplot(aes(x = WNT, y = n, fill = mutation_type)) +
@@ -519,7 +691,7 @@ kras_sum <- kras_df %>%
   scale_y_continuous(breaks = c(0,0.5,1)) +
     scale_x_discrete(limits = c("low", "high")) +
   ylab("Relative frequency") + 
-  ggtitle("KRAS mutations") +  
+  ggtitle("KRAS mutations\np = 0.02") +  
   theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust=1)) +
   theme(
   legend.title = element_text(size = 10),
@@ -560,7 +732,7 @@ row2 <- plot_grid(axin2_waterfall,
                   msi + theme(strip.background = element_blank(), 
                               strip.text = element_blank()),
                   rel_heights = c(0.7,0.8,0.75),ncol=1, align = "v", axis = "lr",
-                  labels = c("D","E",""))
+                  labels = c("D","E",""),hjust=-0.1)
 
 row3 <- plot_grid(apc_sum + theme(legend.box.margin=margin(0,0,0,-10)),
   braf_sum + theme(legend.box.margin=margin(0,0,0,-10)), 
@@ -581,5 +753,15 @@ save_plot("assembled_figures/Figure1.pdf",
 save_plot("assembled_figures/Figure1.png",
         fig1,
          base_height = 10, base_width = 9)
+```
+
+Supplement
+```{r}
+row1 <- plot_grid(pca_plot, con_genes, labels = c("A", "B"))
+row2 <- plot_grid(nkd1_tcga1, tcf7_tcga1, wnt5b_tcga1, nrow=1, labels = c("C", "D", "E"))
+
+sup_fig <- plot_grid(row1, row2, ncol=1)
+
+save_plot("../supplementary_material/FigureS1.pdf", sup_fig,  base_width = 10, base_height = 6)
 ```
 

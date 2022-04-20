@@ -20,7 +20,7 @@ CMS classification
 ```{r}
 cl_cms <- read_csv("../external_data/zhan_cms.csv.gz", skip = 3)
 
-cl_cms <- left_join(metadata_df, cl_cms %>% dplyr::rename(cell_line_name = `Cell line`), by = "cell_line_name") %>%
+cl_cms <- left_join(metadata_df, cl_cms %>% dplyr::rename(cell_line_name = `Cell line...1`), by = "cell_line_name") %>%
   dplyr::mutate(cms_status = ifelse(`Consensus CMS primary` %in% c("CMS1", "CMS2", "CMS3", "CMS4"), `Consensus CMS primary`, "unknown"))
 ```
 
@@ -127,6 +127,18 @@ apc_int_df <- left_join(wnt_groups, apc_mut, by = "depmap_id") %>%
   dplyr::summarize(n_counts = n())
 
 apc_int_df$mutation_count <- factor(apc_int_df$mutation_count,levels = c("0","1",">=2"))
+```
+
+APC statistical test
+
+```{r}
+apc_test_df <- apc_int_df %>%
+  pivot_wider(names_from = mutation_count, values_from = n_counts)
+
+fisher.test(apc_test_df[,-1])
+```
+
+```{r}
 
 apc_plot <- apc_int_df %>%
   ggplot(aes(x = WNT, y = n_counts, fill = mutation_count)) +
@@ -135,7 +147,7 @@ apc_plot <- apc_int_df %>%
   scale_y_continuous(breaks = c(0,0.5,1)) +
   ylab("Relative frequency") +
   scale_x_discrete(limits = c("low", "high"))+
-  ggtitle("APC truncations") +
+  ggtitle("APC truncations\n p = 0.11") +
   theme(axis.text.x = element_text(angle = 45, hjust=1),
   legend.title = element_text(size = 10),
   legend.text = element_text(size = 8),
@@ -157,6 +169,21 @@ kras_df <- left_join(wnt_groups, kras_mut, by = "depmap_id") %>%
 
 kras_df$mutation_type <- factor(kras_df$mutation_type, levels = c("none","other\nmissense","G12|G13" ))
 
+```
+
+KRAS statistical test
+
+```{r}
+kras_test_df <- kras_df %>%
+  pivot_wider(names_from = mutation_type, values_from = n_counts)
+
+kras_test_df[is.na(kras_test_df)] <- 0
+
+fisher.test(kras_test_df[,-1])
+```
+
+```{r}
+
 kras_plot <- kras_df %>%
   ggplot(aes(x = WNT, y = n_counts, fill = mutation_type)) +
   geom_bar(position = "fill",stat = "identity") +
@@ -164,7 +191,7 @@ kras_plot <- kras_df %>%
   scale_x_discrete(limits = c("low", "high"))+
   scale_y_continuous(breaks = c(0,0.5,1)) +
   ylab("Relative frequency") +
-  ggtitle("KRAS mutations") +
+  ggtitle("KRAS mutations\np = 0.45") +
   theme(axis.text.x = element_text(angle = 45, hjust=1),
   legend.title = element_text(size = 10),
   legend.text = element_text(size = 8),
@@ -182,7 +209,19 @@ rnf43_int_df <- left_join(wnt_groups, rnf43_mut, by = "depmap_id") %>%
   dplyr::summarize(n_counts = n())
 
 rnf43_int_df$mutation_type <- factor(rnf43_int_df$mutation_type, levels = c("none","missense","G659Vfs*41","other\ntruncating"))
+```
 
+RNF43 statistical test
+
+```{r}
+rnf43_test_df <- rnf43_int_df %>%
+  pivot_wider(names_from = mutation_type, values_from = n_counts)
+
+
+fisher.test(rnf43_test_df[,-1])
+```
+
+```{r}
 rnf_sum <- rnf43_int_df %>%
  # I checked that there are not 2 mutations in 1 sample
   ggplot(aes(x = WNT, y = n_counts, fill = mutation_type)) +
@@ -191,7 +230,7 @@ rnf_sum <- rnf43_int_df %>%
   scale_x_discrete(limits = c("low", "high")) +
   scale_y_continuous(breaks = c(0,0.5,1)) +
   ylab("Relative frequency") + 
-  ggtitle("RNF43 mutations") +  
+  ggtitle("RNF43 mutations\np = 0.04") +  
 theme(axis.text.x = element_text(angle = 45, hjust=1)) +
   theme(
   legend.title = element_text(size = 10),
@@ -205,18 +244,31 @@ theme(axis.text.x = element_text(angle = 45, hjust=1)) +
 
 
 ```{r}
-braf_plot <- left_join(wnt_groups, braf_mut, by = "depmap_id") %>% 
+braf_df <- left_join(wnt_groups, braf_mut, by = "depmap_id") %>% 
     dplyr::filter(depmap_id %in% mutation_CL) %>%
     dplyr::mutate(mutation_type = ifelse(is.na(mutation_type) , "none", mutation_type)) %>%
   group_by(WNT, mutation_type) %>%
-  dplyr::summarize(n_counts = n()) %>%
+  dplyr::summarize(n_counts = n())
+```
+
+BRAF statistical test
+
+```{r}
+braf_test_df <- braf_df %>%
+  pivot_wider(names_from = mutation_type, values_from = n_counts)
+
+fisher.test(braf_test_df[,-1])
+```
+
+```{r}
+braf_plot <- braf_df %>%
   ggplot(aes(x = WNT, y = n_counts, fill = mutation_type)) +
   geom_bar(position = "fill",stat = "identity")  +
     scale_fill_manual(name = "", values = c(gr3, gr1,dist_c)) +
   scale_x_discrete(limits = c("low", "high"))+
   scale_y_continuous(breaks = c(0,0.5,1)) +
   ylab("Relative frequency") +
-  ggtitle("BRAF mutations") +
+  ggtitle("BRAF mutations\np = 0.17") +
   theme(axis.text.x = element_text(angle = 45, hjust=1),
   legend.title = element_text(size = 10),
   legend.text = element_text(size = 8),
@@ -238,17 +290,32 @@ wnt_groups %>%
 
 Make msi plot
 ```{r}
-msi_plot <- left_join(wnt_groups, metadata_df, by = "depmap_id") %>%
+msi_df <- left_join(wnt_groups, metadata_df, by = "depmap_id") %>%
   dplyr::filter(!is.na(msi_status) & msi_status != "MSI/MSS") %>%
    group_by(WNT, msi_status) %>%
-  dplyr::summarize(n_counts = n()) %>%
+  dplyr::summarize(n_counts = n())
+```
+
+BRAF statistical test
+
+```{r}
+msi_test_df <- msi_df %>%
+  pivot_wider(names_from = msi_status, values_from = n_counts)
+
+msi_test_df[is.na(msi_test_df)] <- 0
+
+fisher.test(msi_test_df[,-1])
+```
+
+```{r}
+msi_plot <- msi_df %>%
   ggplot(aes(x = WNT, y = n_counts, fill = msi_status)) +
   geom_bar(position = "fill",stat = "identity")  +
     scale_fill_manual(name = "", values = c(msih_c, "gray20", msil_c,mss_c)) +
   scale_x_discrete(limits = c("low", "high"))+
   scale_y_continuous(breaks = c(0,0.5,1)) +
   ylab("Relative frequency") +
-  ggtitle("MS status") +
+  ggtitle("MS status\np = 0.01") +
   theme(axis.text.x = element_text(angle = 45, hjust=1),
   legend.title = element_text(size = 10),
   legend.text = element_text(size = 8),
@@ -368,7 +435,7 @@ rko_volcano <- microarray_rko %>%
   theme_bw() + ggtitle("Probes for CTNNB1 target genes:\nGSEA p < 0.01") +
   xlab(expression(Expression ~ logFC ~ (RKO ~ APC^trunc ~ vs. ~ APC^WT))) +
   theme(
-  legend.title = element_text(size = 10),
+  legend.title = element_text(size = 8),
   legend.text = element_text(size = 8),
   legend.key.size = unit(0.3, "cm"),
   axis.text=element_text(size=8),

@@ -30,7 +30,7 @@ low_norm_react_res <- performreactGSEA(low_norm, stat=TRUE)
 tcga_prot_react_res <- performreactGSEA(tcga_prot_res, t=TRUE)
 ```
 ```{r, error = TRUE, warning=FALSE, message=FALSE}
-pdf(file="../supplementary_material/FigS4A.pdf", width = 25, height = 20)
+pdf(file="../supplementary_material/FigS5A.pdf", width = 25, height = 20)
 set.seed(3)
 ReactomePA::emapplot(pairwise_termsim(high_low_react_res), 
   showCategory = 200, color = "enrichmentScore",
@@ -41,7 +41,7 @@ dev.off()
 
 
 ```{r, error = TRUE, warning=FALSE, message=FALSE}
-pdf(file="../supplementary_material/FigS4B.pdf", width = 25, height = 20)
+pdf(file="../supplementary_material/FigS5B.pdf", width = 25, height = 20)
 set.seed(4)
 ReactomePA::emapplot(pairwise_termsim(tcga_prot_react_res), 
   showCategory = 200, color = "enrichmentScore",
@@ -67,7 +67,7 @@ tcga_prot_cc_res <- performmsigdbGSEA(tcga_prot_res, type="CC", t=TRUE)
 ```
 
 ```{r, error = TRUE, warning=FALSE, message=FALSE}
-pdf(file="../supplementary_material/FigS4C.pdf", width = 15, height = 15)
+pdf(file="../supplementary_material/FigS5C.pdf", width = 15, height = 15)
 set.seed(4)
 ReactomePA::emapplot(pairwise_termsim(high_low_cc_res), 
   showCategory = 200, color = "enrichmentScore",
@@ -77,7 +77,7 @@ dev.off()
 ```
 
 ```{r, error = TRUE, warning=FALSE, message=FALSE}
-pdf(file="../supplementary_material/FigS4D.pdf", width = 25, height = 20)
+pdf(file="../supplementary_material/FigS5D.pdf", width = 25, height = 20)
 set.seed(4)
 ReactomePA::emapplot(pairwise_termsim(tcga_prot_cc_res), 
   showCategory = 200, color = "enrichmentScore",
@@ -133,7 +133,7 @@ depmap_t_react_res <- performreactGSEA(depmap_trans, t = TRUE)
 depmap_p_react_res <- performreactGSEA(depmap_prot, t = TRUE)
 ```
 ```{r, error = TRUE, warning=FALSE, message=FALSE}
-pdf(file="../supplementary_material/FigS4E.pdf", width = 25, height = 20)
+pdf(file="../supplementary_material/FigS5E.pdf", width = 25, height = 20)
 set.seed(4)
 ReactomePA::emapplot(pairwise_termsim(depmap_t_react_res), 
   showCategory = 200, color = "enrichmentScore",
@@ -143,7 +143,7 @@ dev.off()
 ```
 
 ```{r, error = TRUE, warning=FALSE, message=FALSE}
-pdf(file="../supplementary_material/FigS4F.pdf", width = 25, height = 20)
+pdf(file="../supplementary_material/FigS5F.pdf", width = 25, height = 20)
 set.seed(4)
 ReactomePA::emapplot(pairwise_termsim(depmap_p_react_res), 
   showCategory = 200, color = "enrichmentScore",
@@ -164,7 +164,7 @@ depmap_p_cc_res  <- performmsigdbGSEA(depmap_prot, type="CC", t = TRUE)
 ```
 
 ```{r, error = TRUE, warning=FALSE, message=FALSE}
-pdf(file="../supplementary_material/FigS4G.pdf", width = 15, height = 15)
+pdf(file="../supplementary_material/FigS5G.pdf", width = 15, height = 15)
 set.seed(4)
 ReactomePA::emapplot(pairwise_termsim(depmap_t_cc_res), 
   showCategory = 200, color = "enrichmentScore",
@@ -174,7 +174,7 @@ dev.off()
 ```
 
 ```{r, error = TRUE, warning=FALSE, message=FALSE}
-pdf(file="../supplementary_material/FigS4H.pdf", width = 20, height = 20)
+pdf(file="../supplementary_material/FigS5H.pdf", width = 20, height = 20)
 set.seed(4)
 ReactomePA::emapplot(pairwise_termsim(depmap_p_cc_res), 
   showCategory = 200, color = "enrichmentScore",

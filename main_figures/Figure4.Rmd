@@ -321,7 +321,7 @@ depmap_mito_trna <-plot_depmap_lfcs(sel_genes_trna$SYMBOL) + ggtitle("Mitochondr
 # APC truncation
 # Picture screen setup
 
-sub1 <- plot_grid(mito_trans_dots, mito_trna_dots, nrow=1, labels = c("D", "E"))
+sub1 <- plot_grid(mito_trans_dots, mito_trna_dots, nrow=1, labels = c("B", "C"))
 
 col1 <- plot_grid(heatmap_pathways + 
     ggtitle("Gene set enrichment")+ 
@@ -329,7 +329,7 @@ col1 <- plot_grid(heatmap_pathways +
   sub1, ncol=1, labels = c("A",""), rel_heights = c(1,0.6))
 
 
-col2 <- cowplot::plot_grid(depmap_mito_trans, depmap_mito_trna, fc_grna_plot, labels = c("B", "C", "F"),ncol=1, rel_heights = c(0.8,0.8,1.1))
+col2 <- cowplot::plot_grid(depmap_mito_trans, depmap_mito_trna, fc_grna_plot, labels = c("E", "F", "D"),ncol=1, rel_heights = c(0.8,0.8,1.1))
 
 
 

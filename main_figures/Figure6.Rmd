@@ -103,7 +103,7 @@ Mitochondrial things from CC and BP
 kegg_heatmap <- rbind(depmap_kegg %>% dplyr::mutate(dataset = "DepMap"),
       tcga_kegg %>% dplyr::filter(contrast == "high_low") %>% 
         dplyr::select(-contrast) %>%
-        dplyr::mutate(dataset = "TCGA")) %>%
+        dplyr::mutate(dataset = "Tumor")) %>%
   group_by(Description) %>%
   dplyr::mutate(valid = n() >= 2) %>%
   dplyr::filter(valid) %>%
@@ -121,7 +121,7 @@ regex_pathways <- "respira|Mitochond|Cristae|Complex|metabolism"
 reactome_heatmap <- rbind(depmap_reactome %>% dplyr::mutate(dataset = "DepMap"),
       tcga_reactome %>% dplyr::filter(contrast == "high_low") %>% 
         dplyr::select(-contrast) %>%
-        dplyr::mutate(dataset = "TCGA")) %>%
+        dplyr::mutate(dataset = "Tumor")) %>%
   group_by(Description) %>%
   dplyr::mutate(valid = n() > 2) %>%
   dplyr::filter(valid) %>%
@@ -143,7 +143,7 @@ pathways_interest
 kegg_pathways <- rbind(depmap_kegg %>% dplyr::mutate(dataset = "DepMap"),
       tcga_kegg %>% dplyr::filter(contrast == "high_low") %>% 
         dplyr::select(-contrast) %>%
-        dplyr::mutate(dataset = "TCGA"))
+        dplyr::mutate(dataset = "Tumor"))
 ```
 
 
@@ -152,11 +152,11 @@ kegg_pathways <- rbind(depmap_kegg %>% dplyr::mutate(dataset = "DepMap"),
 react_cc_pathways <-rbind(depmap_reactome %>% dplyr::mutate(dataset = "DepMap"),
       tcga_reactome %>% dplyr::filter(contrast == "high_low") %>%
     dplyr::select(-contrast) %>%
-        dplyr::mutate(dataset = "TCGA"),
+        dplyr::mutate(dataset = "Tumor"),
   depmap_cc %>% dplyr::mutate(dataset = "DepMap"),
   tcga_cc %>% dplyr::filter(contrast == "high_low") %>%
     dplyr::select(-contrast) %>%
-        dplyr::mutate(dataset = "TCGA"))
+        dplyr::mutate(dataset = "Tumor"))
 ```
 
 ```{r}
@@ -293,7 +293,7 @@ depmap_rna_volcano <- df1 %>%
 df2 <- left_join(tcga_prot_res, genes_interest, by = "SYMBOL") %>% 
   dplyr::filter(!is.na(pathway)) %>%
   dplyr::select(SYMBOL, logFC, adj.P.Val, pathway, label) %>%
-  dplyr::mutate(contrast = "protein", dataset = "TCGA")
+  dplyr::mutate(contrast = "protein", dataset = "Tumor")
 
 tcga_prot_volcano <- df2 %>%
   ggplot(aes(x = logFC, y = -log10(adj.P.Val))) +
@@ -302,7 +302,7 @@ tcga_prot_volcano <- df2 %>%
   geom_text_repel(data  = subset(df2, logFC > 0),aes(label = label, color = pathway), xlim = c(1,2.5), show.legend=FALSE, size =3) +
   geom_text_repel(data  = subset(df2, logFC < 0),aes(label = label, color = pathway), xlim = c(-2.5,-1), show.legend=FALSE, size =3) +
   geom_hline(yintercept = -log10(0.1)) + #facet_wrap(~pathway) +
-  theme_bw() + theme(legend.position = "none")  + ggtitle("TCGA proteomic")+
+  theme_bw() + theme(legend.position = "none")  + ggtitle("Tumor proteomic")+
   scale_color_manual(values = c(amino_c,glyco_c,mito_c,tca_c))
 ```
 ```{r}
@@ -314,7 +314,7 @@ df3 <- left_join(high_low1, genes_interest, by = "SYMBOL") %>%
   dplyr::filter(!is.na(pathway)) %>%
   dplyr::rename(logFC = log2FoldChange,adj.P.Val = padj) %>%
   dplyr::select(SYMBOL, logFC, adj.P.Val, pathway, label) %>%
-  dplyr::mutate(contrast = "RNA", dataset = "TCGA")
+  dplyr::mutate(contrast = "RNA", dataset = "Tumor")
 
 tcga_rna_volcano <- df3 %>%
   ggplot(aes(x = logFC, y = -log10(adj.P.Val))) +
@@ -323,7 +323,7 @@ tcga_rna_volcano <- df3 %>%
   geom_text_repel(data  = subset(df3, logFC > 0),aes(label = label, color = pathway), xlim = c(1,2.5), show.legend=FALSE, size =3) +
   geom_text_repel(data  = subset(df3, logFC < 0),aes(label = label, color = pathway), xlim = c(-2.5,-1), show.legend=FALSE, size =3) +
   geom_hline(yintercept = -log10(0.1)) + #facet_wrap(~pathway) +
-  theme_bw() + theme(legend.position = "none") + ggtitle("TCGA transcriptomic") +
+  theme_bw() + theme(legend.position = "none") + ggtitle("Tumor transcriptomic") +
   scale_color_manual(values = c(amino_c,glyco_c,mito_c,tca_c))
 ```
 
@@ -432,7 +432,7 @@ pathway_vs_normal <- left_join(high_n_fc, low_n_fc, by ="SYMBOL", suffix = c(".h
   geom_abline(slope =1, color = "grey")+
   geom_point(size=1) +
   theme_bw() +
-  ggtitle("TCGA transcriptomic, Tumor vs. normal") +
+  ggtitle("Transcriptomic, Tumor vs. normal") +
   scale_color_manual(values = c(glyco_c,tca_c,mito_c))+
   xlab("Wnt-low vs. normal") +
   ylab("Wnt-high vs. normal") 
@@ -481,7 +481,7 @@ pathway_vs_normal_protein <- left_join(prot_sum, gene_list_complete , by ="SYMBO
   geom_point(size=1) +
  # ggrepel::geom_text_repel(aes(label = label)) + 
   theme_bw() +
-  ggtitle("TCGA proteomic, Tumor vs. normal")+
+  ggtitle("Proteomic, Tumor vs. normal")+
   scale_color_manual(values = c(glyco_c,tca_c,mito_c)) +
   xlab("Wnt-low vs. normal") +
   ylab("Wnt-high vs. normal") 
@@ -642,5 +642,9 @@ c2 <- plot_grid(title2, plot_protein_level("SLC16A1") ,
   rel_heights = c(0.2,1.2,1))
 
 save_plot("../supplementary_material/FigureS5.pdf", plot_grid(c1,c2))
+```
+
+```{r}
+sessionInfo()
 ```
 
